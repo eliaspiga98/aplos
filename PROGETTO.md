@@ -1,0 +1,236 @@
+# Aplo's — Documento di Progetto
+
+Documento principale che consolida la specifica funzionale (`specs.md`) e tutte
+le decisioni tecniche prese durante la progettazione. Aggiornare quando una
+decisione importante cambia. Per i dettagli di dominio (cosa fa il software, le
+storie utente) la fonte di verità resta `specs.md`.
+
+---
+
+## 1. Cos'è Aplo's
+
+Gestionale per **un singolo laboratorio odontotecnico**. Web app fruita da PC e
+tablet condivisi nei banchi di lavoro del laboratorio. Centralizza:
+
+- ciclo di vita delle commesse (lavori) dall'ordine al pronto-consegna,
+- magazzino dei materiali con tracciabilità lotto → lavoro → paziente,
+- anagrafica clienti (dottori / studi) e operatori,
+- assistente in linguaggio naturale per interrogare i dati.
+
+## 2. Vincoli normativi
+
+- **MDR (Medical Device Regulation, UE 2017/745).** I dispositivi prodotti sono
+  "dispositivi medici su misura". Conseguenze tecniche imposte:
+  - tracciabilità completa del **lotto** del materiale impiegato su ogni lavoro
+    (mai cancellare le associazioni `lavoro ↔ lotto materiale`);
+  - **soft delete** su tutte le entità anagrafiche e di produzione (no
+    `DELETE` fisico);
+  - **audit log immutabile** delle azioni operatore.
+- **GDPR.** Trattiamo dati di pazienti (nome, eventualmente CF) e dottori. Il
+  deployment **on-prem** in laboratorio aiuta: i dati non lasciano la struttura.
+  Le copie di backup vanno cifrate.
+
+## 3. Architettura e deployment
+
+- **Tenancy:** single-tenant. Una installazione per laboratorio, su una macchina
+  dedicata in sede.
+- **Forma:** SPA (frontend) + REST API (backend) + Postgres + storage locale per
+  allegati.
+- **Hosting:** macchina locale in laboratorio. Niente cloud. LAN.
+- **Postgres:** installato nativamente sull'OS sia in dev (Homebrew) sia in
+  produzione (gestore di pacchetti del server). Niente Docker.
+- **LLM:** locale (probabilmente Ollama) sulla stessa macchina o su nodo
+  dedicato. Da decidere quando affronteremo il modulo AI.
+- **Backup:** dump giornalieri di Postgres su disco esterno + retention.
+
+## 4. Stack tecnico
+
+| Strato | Scelta | Note |
+|---|---|---|
+| Frontend | React 18 + Vite + TypeScript | SPA. CSS scritto a mano per ora; valutare Tailwind più avanti. |
+| Routing FE | react-router-dom v6 | |
+| Backend | Node 20+ + Fastify + TypeScript | Schema-validation con `@sinclair/typebox`. |
+| Auth | JWT in cookie HTTP-only firmato | Sessione 8h con sliding renewal. |
+| DB | PostgreSQL 16 | |
+| Driver DB | `pg` (no ORM) | Query SQL esplicite, types manuali sui risultati. |
+| Migrazioni | SQL puro versionato in `db/migrations/NNNN_*.sql` | Forward-only, runner Node custom in `api/src/db/migrate.ts`. |
+| Hash PIN | `bcrypt` | |
+| LLM | Locale, da definire | Probabile Ollama. |
+
+**Principi guida:** semplicità prima di tutto, niente ORM-magic, niente
+astrazioni preventive (service/repository). Una funzione per use-case. Codice
+esplicito > meta-programmazione.
+
+## 5. Moduli funzionali
+
+### 5.1 Autenticazione (Fast-Login)
+- Lista operatori → click → PIN numerico → JWT cookie.
+- Auto-logout su inattività (timeout configurabile, default 30 minuti).
+- PIN salvato come hash bcrypt.
+
+### 5.2 Dashboard
+- KPI: lavori per stato (`in_attesa`, `in_corso`, `in_prova`, `finito`),
+  alert materiali sotto soglia, conteggio lavori in scadenza nei prossimi N
+  giorni.
+- Tabella "Ultimi N lavori" con accesso rapido alla modifica.
+- Tutto deve caricare in < 1.5 s.
+
+### 5.3 Gestione Lavori
+- Tabella con omni-search (cognome paziente / dottore / id lavoro) e
+  ordinamento per `data_consegna` ascendente.
+- Filtri per stato.
+- Modale di creazione/modifica con sezioni:
+  - **Anagrafica:** dottore (autocomplete) + paziente.
+  - **Date:** entrata, consegna (consegna ≥ entrata, vincolo DB).
+  - **Tecnica:** scala colori VITA, tipologia, istruzioni, allegati STL.
+  - **Odontogramma:** selezione denti (notazione FDI 11-48 e 51-85),
+    raggruppamento in ponti.
+- Cambio stato come azione separata (registrata in `audit_log`).
+- Registrazione consumo materiale (`lavori_materiali`) come azione separata.
+
+### 5.4 Magazzino Materiali
+- Tab per categoria (`zirconio`, `pmma`, `resina`, `metallo`, `ceramica`,
+  `altro`). Form di inserimento con campi base + `attributi_extra` JSONB per
+  attributi non standard.
+- Stati cialde: `nuovo` / `parziale` / `esaurito`.
+- Alert quando sotto `soglia_alert`.
+- Filtri per lotto, marca, deposito.
+
+### 5.5 Assistente AI (fase finale)
+- Chat. Domanda in italiano → query SQL → risultato → risposta in italiano.
+- LLM locale, **utente DB read-only** dedicato (no SQL injection via prompt).
+- Schema descritto in un prompt di sistema riutilizzabile.
+
+## 6. Modello dati
+
+Schema completo: `db/migrations/0001_initial_schema.sql`.
+
+Entità:
+
+- `operatori` — utenti del sistema (PIN hashato, ruolo `admin`/`tecnico`).
+- `dottori` — anagrafica clienti.
+- `lavori` — commesse / dispositivi medici.
+- `lavori_strutture` — odontogramma. `tipo_struttura` ∈ {`corona_singola`,
+  `ponte`} + `elementi_dentali SMALLINT[]`. Vincoli CHECK garantiscono
+  coerenza (no ponti da 1 dente, no corone con più denti).
+- `lavori_allegati` — file (STL, foto) associati a un lavoro.
+- `materiali` — magazzino. `(categoria, lotto)` UNIQUE.
+- `lavori_materiali` — **tracciabilità MDR**. Mai cancellare.
+- `audit_log` — registro azioni immutabile.
+- `schema_migrations` — versioning migrazioni applicate.
+
+## 7. Decisioni di design
+
+Decisioni prese in fase di progettazione che il codice da solo non spiega.
+
+- **Soft delete via `deleted_at TIMESTAMPTZ`** invece di `is_deleted BOOLEAN`.
+  Tiene anche *quando* è stato cancellato — utile per audit MDR.
+- **Indici parziali `WHERE deleted_at IS NULL`** sui lookup frequenti: query
+  più veloci, indici più piccoli.
+- **Indice `idx_lavori_data_consegna`** è parziale anche su `stato <> 'finito'`
+  perché l'ordering "consegne imminenti" della dashboard interessa solo lavori
+  attivi.
+- **Validazione numeri FDI lato app, non DB.** È più semplice cambiarla.
+- **`attributi_extra JSONB`** sui materiali invece di tabella polimorfica.
+  Quando un attributo emerge come ricorrente lo si "promuove" a colonna.
+- **Audit log popolato dall'app**, non da trigger DB. Più visibile, più semplice
+  da arricchire con contesto (request id, ip, ecc.).
+- **Migrazioni forward-only**. Per "rollback" si scrive una nuova migrazione che
+  inverte. Niente file `down.sql`.
+- **No ORM.** SQL puro o thin query helpers. Massima leggibilità per chi
+  arriva al progetto senza avere familiarità con un ORM specifico.
+- **Tipi italiani per tabelle/colonne** (coerenza con la spec di dominio in
+  `specs.md`). Inglese solo per convenzioni standard (`created_at`,
+  `updated_at`, `deleted_at`).
+
+## 8. Decisioni aperte
+
+Da affrontare prima del rispettivo modulo:
+
+- **Scelta concreta dell'LLM locale** (Ollama + quale modello). Da decidere
+  prima del modulo AI.
+- **Modulo fatturazione.** Citato in `specs.md` ma non specificato. Fuori MVP.
+- **Storage allegati STL.** Default proposto: filesystem locale del server in
+  `var/aplos/uploads/<id_lavoro>/`. Limite dimensione configurabile.
+- **Reset PIN operatore.** Flusso non specificato. Proposta: solo l'admin può
+  resettare il PIN di un altro operatore.
+- ~~**Multi-deposito.** `materiali.deposito` è una stringa libera.~~ Risolto
+  con migrazione 0002: tabella `depositi` con FK `materiali.id_deposito`,
+  pagina dedicata `/depositi`. La vecchia colonna è preservata come
+  `deposito_legacy` per migrazione manuale dei dati esistenti.
+
+## 9. Roadmap
+
+- [x] **Fase 1** — Schema DB + setup Postgres nativo.
+- [x] **Fase 2** — Migration runner + scaffolding backend Fastify + scaffolding
+      frontend Vite. Endpoint health.
+- [x] **Fase 3** — Auth fast-login (server + UI). CRUD operatori (admin only).
+- [x] **Fase 4** — CRUD dottori.
+- [x] **Fase 5** — CRUD lavori con odontogramma. Cambio stato.
+- [x] **Fase 6** — Magazzino materiali (form dinamico). Tracciabilità
+      `lavori_materiali`.
+- [x] **Fase 7** — Audit log integrato in tutte le azioni scriventi.
+- [x] **Fase 8** — Dashboard KPI con scadenze e materiali sotto soglia.
+- [x] **Fase 9** — Upload/download/delete allegati (STL e altro).
+- [x] **Fase 10** — Modulo Assistente AI (Ollama locale, text-to-SQL con utente
+      DB read-only).
+- [x] **Fase 11a** — Auto-logout inattività, rate limiting login,
+      conferme + toast, paginazione, search debounce.
+- [x] **Fase 11b** — Stampa scheda lavoro (`/lavori/:id/stampa`, layout A4
+      con CSS print → Stampa o "Salva come PDF" dal dialog browser).
+- [x] **Fase 11c** — Export CSV (lavori, dottori, materiali) con BOM UTF-8
+      per compatibilità Excel.
+- [x] **Fase 11d** — Multi-deposito strutturato (tabella `depositi` + FK).
+- [ ] **Fase 11e** — Hardening finale: backup automatico (script in
+      `scripts/` già pronto), systemd unit, reverse proxy nginx, HTTPS.
+      Vedi sezione **Deploy** sotto.
+
+## 10. Deploy in laboratorio
+
+Lo schema di deploy proposto per la macchina dedicata in laboratorio:
+
+1. **Postgres 16** installato nativamente. Crea utente principale (`aplos`) e
+   utente read-only (`aplos_readonly`) usato solo dall'AI.
+   ```sql
+   CREATE USER aplos_readonly WITH PASSWORD '...';
+   GRANT CONNECT ON DATABASE aplos TO aplos_readonly;
+   GRANT USAGE ON SCHEMA public TO aplos_readonly;
+   GRANT SELECT ON ALL TABLES IN SCHEMA public TO aplos_readonly;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public
+     GRANT SELECT ON TABLES TO aplos_readonly;
+   ```
+2. **Ollama** sulla stessa macchina (o su nodo separato in LAN). `ollama pull
+   llama3.1:8b` (o il modello scelto). Configurare `OLLAMA_URL` e
+   `OLLAMA_MODEL` nelle env.
+3. **API**: `npm run build` produce `api/dist/`. Avvio con
+   `node --env-file=.env api/dist/server.js`. Tipicamente con un'unit systemd:
+   ```ini
+   [Unit]
+   Description=Aplo's API
+   After=postgresql.service
+   [Service]
+   WorkingDirectory=/opt/aplos
+   EnvironmentFile=/opt/aplos/.env
+   ExecStart=/usr/bin/node api/dist/server.js
+   Restart=on-failure
+   User=aplos
+   [Install]
+   WantedBy=multi-user.target
+   ```
+4. **Frontend**: `npm run build` produce `web/dist/`. Servire con nginx (oppure
+   con il Fastify se si preferisce single-process). Esempio nginx:
+   ```nginx
+   server {
+     listen 80 default_server;
+     root /opt/aplos/web/dist;
+     index index.html;
+     location /api/ { proxy_pass http://127.0.0.1:3001; }
+     location / { try_files $uri /index.html; }
+   }
+   ```
+5. **Backup giornalieri**: cron alle 02:00 lancia `scripts/backup.sh`.
+   Configurato tramite variabili d'ambiente (`APLOS_BACKUP_DIR`,
+   `APLOS_RETENTION`, `DATABASE_URL`).
+6. **Log rotation**: gli stdout di systemd finiscono in journald, già con
+   rotazione gestita dall'OS. Per un log file applicativo dedicato si può
+   aggiungere `pino-roll` in futuro.

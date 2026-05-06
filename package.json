@@ -1,0 +1,23 @@
+{
+  "name": "aplos",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Gestionale per laboratorio odontotecnico",
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "scripts": {
+    "migrate": "npm --workspace api run migrate",
+    "migrate:demo": "npm --workspace api run migrate:demo",
+    "seed": "npm --workspace api run seed",
+    "seed:demo": "npm --workspace api run seed:demo",
+    "dev:api": "npm --workspace api run dev",
+    "dev:web": "npm --workspace web run dev",
+    "build": "npm --workspace api run build && npm --workspace web run build",
+    "typecheck": "npm --workspace api run typecheck && npm --workspace web run typecheck"
+  },
+  "engines": {
+    "node": ">=20.6.0"
+  }
+}

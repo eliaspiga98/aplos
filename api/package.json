@@ -1,0 +1,37 @@
+{
+  "name": "@aplos/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch --env-file=../.env src/server.ts",
+    "start": "node --env-file=../.env dist/server.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate": "tsx --env-file=../.env src/db/migrate.ts",
+    "migrate:demo": "tsx --env-file=../.env src/db/migrate.ts --target=demo",
+    "seed": "tsx --env-file=../.env src/db/seed.ts",
+    "seed:demo": "tsx --env-file=../.env src/db/seed-demo.ts",
+    "test": "node --test --import tsx 'test/**/*.test.ts'"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^10.0.2",
+    "@fastify/jwt": "^10.0.0",
+    "@fastify/multipart": "^9.0.2",
+    "@fastify/rate-limit": "^10.2.2",
+    "@sinclair/typebox": "^0.34.13",
+    "bcryptjs": "^2.4.3",
+    "fastify": "^5.2.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10",
+    "pino-pretty": "^13.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

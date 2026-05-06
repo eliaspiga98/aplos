@@ -1,0 +1,18 @@
+.env
+.env.local
+.env.*.local
+
+node_modules/
+dist/
+build/
+.vite/
+
+# storage allegati locali (uploads)
+var/
+
+*.log
+.DS_Store
+
+# editor
+.vscode/
+.idea/
