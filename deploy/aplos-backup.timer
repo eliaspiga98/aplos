@@ -1,0 +1,12 @@
+[Unit]
+Description=Aplo's daily backup timer (02:00 every day)
+Requires=aplos-backup.service
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+RandomizedDelaySec=5min
+Unit=aplos-backup.service
+
+[Install]
+WantedBy=timers.target

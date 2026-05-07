@@ -1,0 +1,34 @@
+[Unit]
+Description=Aplo's API (Fastify)
+Documentation=file:/opt/aplos/deploy/DEPLOY.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=aplos
+Group=aplos
+WorkingDirectory=/opt/aplos
+ExecStart=/usr/bin/node --env-file=/opt/aplos/.env /opt/aplos/api/dist/server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aplos-api
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/aplos/var
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

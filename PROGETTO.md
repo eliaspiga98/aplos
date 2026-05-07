@@ -149,11 +149,19 @@ Da affrontare prima del rispettivo modulo:
 
 - **Scelta concreta dell'LLM locale** (Ollama + quale modello). Da decidere
   prima del modulo AI.
+- **Test integrati DB-dipendenti.** Oggi i test (`api/test/*.test.ts`) sono
+  tutti unit puri (sql-guard, validators FDI, audit logger con mock,
+  bcrypt round-trip). Per i flussi MDR end-to-end (soft delete lavoro che
+  preserva `lavori_materiali`, audit entry per ogni write) servirebbe un
+  harness con `TEST_DATABASE_URL`, migrazioni e cleanup. Non bloccante
+  per il go-live, ma raccomandato in seguito.
 - **Modulo fatturazione.** Citato in `specs.md` ma non specificato. Fuori MVP.
 - **Storage allegati STL.** Default proposto: filesystem locale del server in
   `var/aplos/uploads/<id_lavoro>/`. Limite dimensione configurabile.
-- **Reset PIN operatore.** Flusso non specificato. Proposta: solo l'admin può
-  resettare il PIN di un altro operatore.
+- ~~**Reset PIN operatore.**~~ Risolto: l'admin imposta un nuovo PIN da
+  "Modifica operatore" (campo "Nuovo PIN (lasciare vuoto per non cambiare)"
+  in `OperatoreFormModal`). L'operatore al primo login col nuovo PIN può
+  cambiarlo da `CambioPinModal`.
 - ~~**Multi-deposito.** `materiali.deposito` è una stringa libera.~~ Risolto
   con migrazione 0002: tabella `depositi` con FK `materiali.id_deposito`,
   pagina dedicata `/depositi`. La vecchia colonna è preservata come
@@ -181,11 +189,21 @@ Da affrontare prima del rispettivo modulo:
 - [x] **Fase 11c** — Export CSV (lavori, dottori, materiali) con BOM UTF-8
       per compatibilità Excel.
 - [x] **Fase 11d** — Multi-deposito strutturato (tabella `depositi` + FK).
-- [ ] **Fase 11e** — Hardening finale: backup automatico (script in
-      `scripts/` già pronto), systemd unit, reverse proxy nginx, HTTPS.
-      Vedi sezione **Deploy** sotto.
+- [x] **Fase 11e** — Hardening finale: systemd unit per API, systemd timer
+      per backup giornaliero, reverse proxy nginx, certificato HTTPS
+      self-signed per LAN. File in `deploy/` + `scripts/generate-cert.sh`.
+      Runbook completo in `deploy/DEPLOY.md`.
+- [x] **Fase 12** — UX polish dashboard: Dashboard riscritta con KPI grafici,
+      vista Kanban dei lavori (`LavoriKanban`), vista Calendario consegne
+      (`CalendarView` + pagina `/calendario`), campanella notifiche
+      (`NotificheBell`), `LavoroPreviewBlock` per anteprime contestuali,
+      `DottoreDetailModal`, AiWidget riscritto con storia conversazione e
+      suggerimenti.
 
 ## 10. Deploy in laboratorio
+
+> **Runbook eseguibile**: `deploy/DEPLOY.md`. La sezione qui sotto è il
+> riepilogo architetturale; per i comandi passo-passo seguire il runbook.
 
 Lo schema di deploy proposto per la macchina dedicata in laboratorio:
 
