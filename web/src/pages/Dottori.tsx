@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { getList, type Dottore } from '../api';
 import { DottoreFormModal } from '../components/DottoreFormModal';
+import { DottoreDetailModal } from '../components/DottoreDetailModal';
 import { Pager } from '../components/Pager';
 import { ExportCsvButton } from '../components/ExportCsvButton';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
@@ -16,7 +17,7 @@ export function DottoriPage() {
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [editing, setEditing] = useState<Dottore | null>(null);
+  const [openId, setOpenId] = useState<number | null>(null);
 
   const debouncedQ = useDebouncedValue(q, 250);
 
@@ -83,7 +84,7 @@ export function DottoriPage() {
             </thead>
             <tbody>
               {dottori.map((d) => (
-                <tr key={d.id} onClick={() => setEditing(d)}>
+                <tr key={d.id} onClick={() => setOpenId(d.id)}>
                   <td><strong>{d.nome}</strong></td>
                   <td>{d.studio ?? <span className="muted">—</span>}</td>
                   <td>{d.telefono ?? <span className="muted">—</span>}</td>
@@ -104,11 +105,10 @@ export function DottoriPage() {
         onClose={() => setShowCreate(false)}
         onSaved={() => void fetchDottori(debouncedQ, offset)}
       />
-      <DottoreFormModal
-        open={editing != null}
-        onClose={() => setEditing(null)}
-        onSaved={() => void fetchDottori(debouncedQ, offset)}
-        dottore={editing}
+      <DottoreDetailModal
+        idDottore={openId}
+        onClose={() => setOpenId(null)}
+        onChanged={() => void fetchDottori(debouncedQ, offset)}
       />
     </div>
   );

@@ -3,6 +3,7 @@ import { Modal } from './Modal';
 import { useToast } from './Toaster';
 import { useConfirm } from './ConfirmDialog';
 import { api, ApiError, type Operatore } from '../api';
+import { RUOLO_LABEL } from '../utils/format';
 
 interface Props {
   open: boolean;
@@ -131,8 +132,8 @@ export function OperatoreFormModal({ open, onClose, onSaved, operatore }: Props)
             value={form.ruolo}
             onChange={(e) => setForm({ ...form, ruolo: e.target.value as 'admin' | 'tecnico' })}
           >
-            <option value="tecnico">Tecnico</option>
-            <option value="admin">Admin</option>
+            <option value="tecnico">{RUOLO_LABEL.tecnico}</option>
+            <option value="admin">{RUOLO_LABEL.admin}</option>
           </select>
         </label>
         <label>

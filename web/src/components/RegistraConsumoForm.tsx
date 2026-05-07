@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, type Materiale } from '../api';
+import { labelCategoria } from '../utils/format';
 
 interface Props {
   idLavoro: number;
@@ -59,7 +60,7 @@ export function RegistraConsumoForm({ idLavoro, onCancel, onSaved }: Props) {
             <option value="">— seleziona —</option>
             {materiali.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.categoria} {m.marca ?? ''} {m.colore ?? ''} — lotto {m.lotto}
+                {labelCategoria(m.categoria)} {m.marca ?? ''} {m.colore ?? ''} — lotto {m.lotto}
               </option>
             ))}
           </select>

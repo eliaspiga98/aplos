@@ -90,6 +90,70 @@ export async function dottoriRoutes(app: FastifyInstance) {
     return row;
   });
 
+  /**
+   * Statistiche aggregate per dottore + ultimi lavori.
+   * Restituisce conteggi per stato, ritardi, tempi medi consegna,
+   * e la lista degli ultimi N lavori (per visualizzazione storico).
+   */
+  app.get('/:id/stats', { schema: { params: IdParams } }, async (req, reply) => {
+    const { id } = req.params as { id: number };
+
+    const dottoreResult = await req.pool.query(
+      `SELECT * FROM dottori WHERE id = $1 AND deleted_at IS NULL`,
+      [id],
+    );
+    if (dottoreResult.rowCount === 0) {
+      return reply.code(404).send({ error: 'Dottore non trovato' });
+    }
+
+    const [byStato, riassunto, ultimi] = await Promise.all([
+      req.pool.query(
+        `SELECT stato, COUNT(*)::int AS n
+         FROM lavori
+         WHERE id_dottore = $1 AND deleted_at IS NULL
+         GROUP BY stato`,
+        [id],
+      ),
+      req.pool.query<{
+        totale: number; in_ritardo: number;
+        tempo_medio_giorni: number | null; tempo_medio_finiti_giorni: number | null;
+      }>(
+        `SELECT
+           COUNT(*)::int AS totale,
+           COUNT(*) FILTER (
+             WHERE stato <> 'finito' AND data_consegna < CURRENT_DATE
+           )::int AS in_ritardo,
+           ROUND(AVG(data_consegna - data_entrata))::int AS tempo_medio_giorni,
+           ROUND(AVG(data_consegna - data_entrata) FILTER (WHERE stato = 'finito'))::int
+             AS tempo_medio_finiti_giorni
+         FROM lavori
+         WHERE id_dottore = $1 AND deleted_at IS NULL`,
+        [id],
+      ),
+      req.pool.query(
+        `SELECT id, nome_paziente, data_entrata, data_consegna, stato, scala_colori,
+                tipologia_lavoro
+         FROM lavori
+         WHERE id_dottore = $1 AND deleted_at IS NULL
+         ORDER BY data_consegna DESC
+         LIMIT 50`,
+        [id],
+      ),
+    ]);
+
+    const counts: Record<string, number> = {
+      in_attesa: 0, in_corso: 0, in_prova: 0, finito: 0,
+    };
+    for (const r of byStato.rows) counts[r.stato as string] = Number(r.n);
+
+    return {
+      dottore: dottoreResult.rows[0],
+      counts,
+      riassunto: riassunto.rows[0],
+      ultimi: ultimi.rows,
+    };
+  });
+
   app.post('/', { schema: { body: Body } }, async (req, reply) => {
     const b = req.body as Record<string, string | null>;
     const result = await req.pool.query(

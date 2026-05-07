@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, type StatoUtilizzo } from '../api';
+import { STATO_UTILIZZO_LABEL } from '../utils/format';
 
 const STATI: StatoUtilizzo[] = ['nuovo', 'parziale', 'esaurito'];
 
@@ -30,7 +31,7 @@ export function StatoUtilizzoSelect({ idMateriale, stato, onChange }: Props) {
       onChange={(e) => void handleChange(e.target.value as StatoUtilizzo)}
       disabled={busy}
     >
-      {STATI.map((s) => <option key={s} value={s}>{s}</option>)}
+      {STATI.map((s) => <option key={s} value={s}>{STATO_UTILIZZO_LABEL[s]}</option>)}
     </select>
   );
 }

@@ -3,9 +3,10 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { CambioPinModal } from './CambioPinModal';
 import { AiWidget } from './AiWidget';
+import { labelRuolo } from '../utils/format';
 import {
   IconHome, IconBriefcase, IconUserMd, IconBox, IconWarehouse,
-  IconUsers, IconLogout, IconKey,
+  IconUsers, IconLogout, IconKey, IconClock,
 } from './icons';
 
 interface NavItem {
@@ -17,12 +18,13 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { to: '/',          label: 'Dashboard', icon: IconHome,      end: true },
-  { to: '/lavori',    label: 'Lavori',    icon: IconBriefcase },
-  { to: '/dottori',   label: 'Dottori',   icon: IconUserMd },
-  { to: '/materiali', label: 'Materiali', icon: IconBox },
-  { to: '/depositi',  label: 'Depositi',  icon: IconWarehouse },
-  { to: '/operatori', label: 'Operatori', icon: IconUsers, adminOnly: true },
+  { to: '/',           label: 'Dashboard',  icon: IconHome,      end: true },
+  { to: '/lavori',     label: 'Lavori',     icon: IconBriefcase },
+  { to: '/calendario', label: 'Calendario', icon: IconClock },
+  { to: '/dottori',    label: 'Dottori',    icon: IconUserMd },
+  { to: '/materiali',  label: 'Materiali',  icon: IconBox },
+  { to: '/depositi',   label: 'Depositi',   icon: IconWarehouse },
+  { to: '/operatori',  label: 'Operatori',  icon: IconUsers, adminOnly: true },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -70,7 +72,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <div className="user-avatar">{user?.nome?.[0]?.toUpperCase() ?? '?'}</div>
             <div>
               <div className="user-name">{user?.nome}</div>
-              <div className="user-role">{user?.ruolo}</div>
+              <div className="user-role">{labelRuolo(user?.ruolo)}</div>
             </div>
           </div>
           <button type="button" onClick={() => setShowPin(true)} className="sidebar-btn">

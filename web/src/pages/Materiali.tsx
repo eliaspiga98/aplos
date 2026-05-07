@@ -6,6 +6,7 @@ import { StatoUtilizzoSelect } from '../components/StatoUtilizzoSelect';
 import { Pager } from '../components/Pager';
 import { ExportCsvButton } from '../components/ExportCsvButton';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { labelCategoria, CATEGORIA_LABEL } from '../utils/format';
 
 const CATEGORIE = ['zirconio', 'pmma', 'resina', 'metallo', 'ceramica', 'altro'] as const;
 const PAGE_SIZE = 50;
@@ -82,7 +83,7 @@ export function MaterialiPage() {
         />
         <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
           <option value="">Tutte le categorie</option>
-          {CATEGORIE.map((c) => <option key={c} value={c}>{c}</option>)}
+          {CATEGORIE.map((c) => <option key={c} value={c}>{CATEGORIA_LABEL[c]}</option>)}
         </select>
       </div>
 
@@ -105,7 +106,7 @@ export function MaterialiPage() {
             <tbody>
               {materiali.map((m) => (
                 <tr key={m.id}>
-                  <td>{m.categoria}</td>
+                  <td>{labelCategoria(m.categoria)}</td>
                   <td>{m.marca ?? <span className="muted">—</span>}</td>
                   <td>{m.colore ?? <span className="muted">—</span>}</td>
                   <td>{m.lotto}</td>

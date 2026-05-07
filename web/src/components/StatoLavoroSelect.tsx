@@ -1,12 +1,10 @@
 import { useState } from 'react';
 import { api, type StatoLavoro } from '../api';
+import { STATO_LAVORO_LABEL } from '../utils/format';
 
-const STATI: { value: StatoLavoro; label: string }[] = [
-  { value: 'in_attesa', label: 'In attesa' },
-  { value: 'in_corso', label: 'In corso' },
-  { value: 'in_prova', label: 'In prova' },
-  { value: 'finito', label: 'Finito' },
-];
+const STATI: { value: StatoLavoro; label: string }[] = (
+  ['in_attesa', 'in_corso', 'in_prova', 'finito'] as StatoLavoro[]
+).map((value) => ({ value, label: STATO_LAVORO_LABEL[value]! }));
 
 interface Props {
   idLavoro: number;

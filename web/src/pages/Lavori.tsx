@@ -6,11 +6,17 @@ import { LavoroDetailModal } from '../components/LavoroDetailModal';
 import { StatoLavoroSelect } from '../components/StatoLavoroSelect';
 import { Pager } from '../components/Pager';
 import { ExportCsvButton } from '../components/ExportCsvButton';
+import { LavoriKanban } from '../components/LavoriKanban';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { formatDate } from '../utils/format';
+import { useAuth } from '../auth';
 
 const PAGE_SIZE = 50;
 
 export function LavoriPage() {
+  const { user } = useAuth();
+  const viewKey = user?.id ? `aplos:lavori-view:${user.id}` : null;
+
   const [searchParams, setSearchParams] = useSearchParams();
   const [lavori, setLavori] = useState<Lavoro[]>([]);
   const [total, setTotal] = useState(0);
@@ -19,6 +25,21 @@ export function LavoriPage() {
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  // Vista: priorità query string > preferenza salvata per l'utente > default kanban
+  const [view, setView] = useState<'tabella' | 'kanban'>(() => {
+    const fromUrl = searchParams.get('view');
+    if (fromUrl === 'tabella' || fromUrl === 'kanban') return fromUrl;
+    if (viewKey) {
+      const saved = localStorage.getItem(viewKey);
+      if (saved === 'tabella' || saved === 'kanban') return saved;
+    }
+    return 'kanban';
+  });
+
+  // Persisti la vista per l'utente
+  useEffect(() => {
+    if (viewKey) localStorage.setItem(viewKey, view);
+  }, [view, viewKey]);
   const [openId, setOpenId] = useState<number | null>(() => {
     const v = searchParams.get('open');
     return v ? Number(v) : null;
@@ -41,12 +62,19 @@ export function LavoriPage() {
     setOpenId(v ? Number(v) : null);
   }, [searchParams]);
 
-  const fetchLavori = useCallback(async (query: string, statoFilter: string, off: number) => {
+  const fetchLavori = useCallback(async (
+    query: string,
+    statoFilter: string,
+    off: number,
+    useView: 'tabella' | 'kanban',
+  ) => {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     if (statoFilter) params.set('stato', statoFilter);
-    params.set('limit', String(PAGE_SIZE));
-    params.set('offset', String(off));
+    // In Kanban prendiamo molti più lavori (devono entrare tutti nelle 4
+    // colonne); in tabella usiamo la paginazione standard.
+    params.set('limit', useView === 'kanban' ? '500' : String(PAGE_SIZE));
+    params.set('offset', useView === 'kanban' ? '0' : String(off));
     setLoading(true);
     try {
       const { rows, total } = await getList<Lavoro>(`/api/lavori?${params}`);
@@ -63,8 +91,8 @@ export function LavoriPage() {
   }, [debouncedQ, stato]);
 
   useEffect(() => {
-    void fetchLavori(debouncedQ, stato, offset);
-  }, [debouncedQ, stato, offset, fetchLavori]);
+    void fetchLavori(debouncedQ, stato, offset, view);
+  }, [debouncedQ, stato, offset, fetchLavori, view]);
 
   function applyStato(id: number, next: StatoLavoro) {
     setLavori((curr) => curr.map((l) => (l.id === id ? { ...l, stato: next } : l)));
@@ -89,23 +117,47 @@ export function LavoriPage() {
       </header>
 
       <div className="filters">
+        <div className="view-switch">
+          <button
+            type="button"
+            className={view === 'tabella' ? 'view-switch-btn view-switch-btn--active' : 'view-switch-btn'}
+            onClick={() => setView('tabella')}
+          >
+            Tabella
+          </button>
+          <button
+            type="button"
+            className={view === 'kanban' ? 'view-switch-btn view-switch-btn--active' : 'view-switch-btn'}
+            onClick={() => setView('kanban')}
+          >
+            Kanban
+          </button>
+        </div>
         <input
           type="search"
           placeholder="Cerca paziente, dottore o ID…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <select value={stato} onChange={(e) => setStato(e.target.value)}>
-          <option value="">Tutti gli stati</option>
-          <option value="in_attesa">In attesa</option>
-          <option value="in_corso">In corso</option>
-          <option value="in_prova">In prova</option>
-          <option value="finito">Finito</option>
-        </select>
+        {view === 'tabella' && (
+          <select value={stato} onChange={(e) => setStato(e.target.value)}>
+            <option value="">Tutti gli stati</option>
+            <option value="in_attesa">In attesa</option>
+            <option value="in_corso">In corso</option>
+            <option value="in_prova">In prova</option>
+            <option value="finito">Finito</option>
+          </select>
+        )}
       </div>
 
       {loading ? (
         <p>Caricamento…</p>
+      ) : view === 'kanban' ? (
+        <LavoriKanban
+          lavori={lavori}
+          onChange={setLavori}
+          onOpen={(id) => setOpenId(id)}
+        />
       ) : (
         <>
           <table className="table table--clickable">
@@ -128,8 +180,8 @@ export function LavoriPage() {
                     {l.dottore_nome}
                     {l.dottore_studio ? <span className="muted"> — {l.dottore_studio}</span> : null}
                   </td>
-                  <td>{l.data_entrata}</td>
-                  <td>{l.data_consegna}</td>
+                  <td>{formatDate(l.data_entrata)}</td>
+                  <td>{formatDate(l.data_consegna)}</td>
                   <td>
                     <StatoLavoroSelect
                       idLavoro={l.id}
@@ -151,12 +203,12 @@ export function LavoriPage() {
       <LavoroFormModal
         open={showCreate}
         onClose={() => setShowCreate(false)}
-        onSaved={() => void fetchLavori(debouncedQ, stato, offset)}
+        onSaved={() => void fetchLavori(debouncedQ, stato, offset, view)}
       />
       <LavoroDetailModal
         idLavoro={openId}
         onClose={() => setOpenId(null)}
-        onChanged={() => void fetchLavori(debouncedQ, stato, offset)}
+        onChanged={() => void fetchLavori(debouncedQ, stato, offset, view)}
       />
     </div>
   );

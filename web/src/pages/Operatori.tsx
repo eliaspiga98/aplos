@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type Operatore } from '../api';
 import { OperatoreFormModal } from '../components/OperatoreFormModal';
 import { useAuth } from '../auth';
+import { formatDate, labelRuolo } from '../utils/format';
 
 export function OperatoriPage() {
   const { user } = useAuth();
@@ -54,14 +55,14 @@ export function OperatoriPage() {
               <tr key={o.id} onClick={() => setEditing(o)}>
                 <td><strong>{o.nome}</strong></td>
                 <td>
-                  <span className={`pill pill--${o.ruolo}`}>{o.ruolo}</span>
+                  <span className={`pill pill--${o.ruolo}`}>{labelRuolo(o.ruolo)}</span>
                 </td>
                 <td>
                   {o.usa_demo
                     ? <span className="badge-demo">DEMO</span>
                     : <span className="muted">—</span>}
                 </td>
-                <td>{new Date(o.created_at).toLocaleDateString('it-IT')}</td>
+                <td>{formatDate(o.created_at)}</td>
               </tr>
             ))}
             {operatori.length === 0 && (

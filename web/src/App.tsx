@@ -5,6 +5,7 @@ import { LoginPage } from './pages/Login';
 import { DashboardPage } from './pages/Dashboard';
 import { LavoriPage } from './pages/Lavori';
 import { LavoroStampaPage } from './pages/LavoroStampa';
+import { CalendarioPage } from './pages/Calendario';
 import { DottoriPage } from './pages/Dottori';
 import { MaterialiPage } from './pages/Materiali';
 import { DepositiPage } from './pages/Depositi';
@@ -42,6 +43,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/lavori" element={<LavoriPage />} />
+              <Route path="/calendario" element={<CalendarioPage />} />
               <Route path="/dottori" element={<DottoriPage />} />
               <Route path="/materiali" element={<MaterialiPage />} />
               <Route path="/depositi" element={<DepositiPage />} />

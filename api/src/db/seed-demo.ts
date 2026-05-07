@@ -30,6 +30,12 @@ function dateOffset(days: number): string {
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
+function tsOffset(days: number, hour = 9, minute = 0): Date {
+  const d = new Date(today);
+  d.setDate(d.getDate() + days);
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
 
 async function main() {
   const c = await pool.connect();
@@ -147,19 +153,27 @@ async function main() {
       { dottore: 1, paziente: 'Alessandro Lupo',  entrata: -15,consegna: -3, stato: 'finito',    colore: 'A2', tipologia: 'Corona singola',             strutture: [{ tipo: 'corona_singola', denti: [46] }] },
     ];
 
+    let lavoroIdx = 0;
     for (const l of lavori) {
+      // Alterniamo gli operatori per dare varietà alle statistiche.
+      const operatoreCreazione = (lavoroIdx % 2) + 1; // 1=Admin Demo, 2=Tecnico Demo
+      lavoroIdx++;
+
       const lavoroResult = await c.query<{ id: number }>(
         `INSERT INTO lavori
            (id_dottore, nome_paziente, data_entrata, data_consegna, stato,
-            scala_colori, tipologia_lavoro, note_istruzioni, id_operatore_creazione)
-         VALUES ($1, $2, $3, $4, $5::stato_lavoro, $6, $7, $8, 1)
+            scala_colori, tipologia_lavoro, note_istruzioni, id_operatore_creazione,
+            created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5::stato_lavoro, $6, $7, $8, $9, $10, $10)
          RETURNING id`,
         [
           l.dottore, l.paziente, dateOffset(l.entrata), dateOffset(l.consegna),
           l.stato, l.colore, l.tipologia, l.istruzioni ?? null,
+          operatoreCreazione, tsOffset(l.entrata, 9, 30),
         ],
       );
       const idLavoro = lavoroResult.rows[0]!.id;
+
       for (const s of l.strutture) {
         await c.query(
           `INSERT INTO lavori_strutture (id_lavoro, tipo_struttura, elementi_dentali)
@@ -168,18 +182,89 @@ async function main() {
         );
       }
 
-      // Per i lavori in_corso/in_prova/finito aggiungo qualche consumo
-      // materiale per dimostrare la tracciabilità.
+      // ---------- AUDIT LOG ricostruito ----------
+      // Evento "creazione" sempre.
+      await c.query(
+        `INSERT INTO audit_log (id_operatore, azione, entita, id_entita, dettagli, created_at)
+         VALUES ($1, 'CREATE_LAVORO', 'lavori', $2, $3, $4)`,
+        [
+          operatoreCreazione, idLavoro,
+          JSON.stringify({ paziente: l.paziente, n_strutture: l.strutture.length }),
+          tsOffset(l.entrata, 9, 30),
+        ],
+      );
+
+      // Cambi stato in base allo stato finale del lavoro.
+      // Calcolo i giorni intermedi proporzionalmente all'intervallo
+      // entrata→consegna così le date sono coerenti.
+      const span = l.consegna - l.entrata;
+      // Tempistica tipica nel laboratorio: subito in lavorazione, poi prova
+      // qualche giorno prima della consegna, poi finito alla consegna.
+      const giornoInCorso = l.entrata + Math.max(1, Math.floor(span * 0.15));
+      const giornoInProva = l.entrata + Math.max(2, Math.floor(span * 0.7));
+      const giornoFinito  = l.consegna;
+
+      const cambi: Array<{ da: string; a: string; quando: number; ora: number }> = [];
+      if (l.stato === 'in_corso' || l.stato === 'in_prova' || l.stato === 'finito') {
+        cambi.push({ da: 'in_attesa', a: 'in_corso', quando: giornoInCorso, ora: 10 });
+      }
+      if (l.stato === 'in_prova' || l.stato === 'finito') {
+        cambi.push({ da: 'in_corso', a: 'in_prova', quando: giornoInProva, ora: 14 });
+      }
+      if (l.stato === 'finito') {
+        cambi.push({ da: 'in_prova', a: 'finito', quando: giornoFinito, ora: 16 });
+      }
+      for (const cambio of cambi) {
+        const opCambio = ((cambio.quando + lavoroIdx) % 2) + 1;
+        await c.query(
+          `INSERT INTO audit_log (id_operatore, azione, entita, id_entita, dettagli, created_at)
+           VALUES ($1, 'CAMBIO_STATO_LAVORO', 'lavori', $2, $3, $4)`,
+          [
+            opCambio, idLavoro,
+            JSON.stringify({ da: cambio.da, a: cambio.a }),
+            tsOffset(cambio.quando, cambio.ora, 0),
+          ],
+        );
+      }
+
+      // Consumo materiale (in_corso, in_prova, finito).
       if (l.stato !== 'in_attesa') {
         const idMaterialeMap: Record<string, number> = {
           A1: 1, A2: 2, A3: 3, BL2: 4, B1: 5,
         };
         const idMat = idMaterialeMap[l.colore] ?? 2;
-        await c.query(
+        const quandoUso = giornoInCorso + 1;
+
+        const matResult = await c.query<{ id: number }>(
           `INSERT INTO lavori_materiali
-             (id_lavoro, id_materiale, quantita_usata, unita_misura, note, id_operatore)
-           VALUES ($1, $2, $3, $4, $5, 1)`,
-          [idLavoro, idMat, 1, 'pz', `Fresatura ${l.tipologia}`],
+             (id_lavoro, id_materiale, quantita_usata, unita_misura, note,
+              id_operatore, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id`,
+          [
+            idLavoro, idMat, 1, 'pz', `Fresatura ${l.tipologia}`,
+            operatoreCreazione, tsOffset(quandoUso, 11, 0),
+          ],
+        );
+        await c.query(
+          `INSERT INTO audit_log (id_operatore, azione, entita, id_entita, dettagli, created_at)
+           VALUES ($1, 'REGISTRA_MATERIALE', 'lavori_materiali', $2, $3, $4)`,
+          [
+            operatoreCreazione, matResult.rows[0]!.id,
+            JSON.stringify({ id_lavoro: idLavoro, id_materiale: idMat }),
+            tsOffset(quandoUso, 11, 0),
+          ],
+        );
+        // Aggiungo anche un audit "duplicato" sull'entità lavori così
+        // appare nella timeline del dettaglio lavoro (che filtra per entita='lavori').
+        await c.query(
+          `INSERT INTO audit_log (id_operatore, azione, entita, id_entita, dettagli, created_at)
+           VALUES ($1, 'REGISTRA_MATERIALE', 'lavori', $2, $3, $4)`,
+          [
+            operatoreCreazione, idLavoro,
+            JSON.stringify({ id_materiale: idMat, quantita: 1, unita: 'pz' }),
+            tsOffset(quandoUso, 11, 0),
+          ],
         );
       }
     }
@@ -189,9 +274,19 @@ async function main() {
     const counts = await c.query<{ stato: string; n: string }>(
       `SELECT stato, COUNT(*)::int AS n FROM lavori GROUP BY stato ORDER BY stato`,
     );
-    console.log('\nSeed demo completato. Distribuzione lavori:');
+    const auditCount = await c.query<{ n: string }>(
+      `SELECT COUNT(*)::int AS n FROM audit_log`,
+    );
+    const lmCount = await c.query<{ n: string }>(
+      `SELECT COUNT(*)::int AS n FROM lavori_materiali`,
+    );
+
+    console.log('\nSeed demo completato.');
+    console.log('Distribuzione lavori:');
     for (const r of counts.rows) console.log(`  ${r.stato.padEnd(12)}  ${r.n}`);
-    console.log('\nDottori, materiali, depositi seedati. Operatori demo:');
+    console.log(`  audit_log:    ${auditCount.rows[0]!.n} eventi`);
+    console.log(`  lavori_materiali: ${lmCount.rows[0]!.n} consumi`);
+    console.log('\nOperatori demo (autenticazione resta sul main DB):');
     console.log('  Admin Demo / 0000');
     console.log('  Tecnico Demo / 0000');
     console.log('\nPer attivare un account: dal main DB, marca un operatore con usa_demo=true.');

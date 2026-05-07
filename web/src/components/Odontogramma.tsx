@@ -9,7 +9,8 @@ export interface Struttura {
 
 interface Props {
   value: Struttura[];
-  onChange: (next: Struttura[]) => void;
+  onChange?: (next: Struttura[]) => void;
+  readonly?: boolean;
 }
 
 // Layout di riga visto dall'osservatore (specchio del paziente):
@@ -19,8 +20,9 @@ const ROW_TOP_RIGHT = [21, 22, 23, 24, 25, 26, 27, 28];
 const ROW_BOT_LEFT = [48, 47, 46, 45, 44, 43, 42, 41];
 const ROW_BOT_RIGHT = [31, 32, 33, 34, 35, 36, 37, 38];
 
-export function Odontogramma({ value, onChange }: Props) {
+export function Odontogramma({ value, onChange, readonly = false }: Props) {
   const [selected, setSelected] = useState<number[]>([]);
+  const editable = !readonly && !!onChange;
 
   // Mappa: numero dente -> indice della struttura che lo contiene (se esiste).
   const toothToStructIdx = useMemo(() => {
@@ -32,10 +34,10 @@ export function Odontogramma({ value, onChange }: Props) {
   }, [value]);
 
   function toggleTooth(n: number) {
+    if (!editable) return;
     if (toothToStructIdx.has(n)) {
-      // dente già in una struttura: rimuovi quella struttura
       const idx = toothToStructIdx.get(n)!;
-      onChange(value.filter((_, i) => i !== idx));
+      onChange!(value.filter((_, i) => i !== idx));
       return;
     }
     setSelected((curr) =>
@@ -44,19 +46,19 @@ export function Odontogramma({ value, onChange }: Props) {
   }
 
   function addAsCoronaSingola() {
-    if (selected.length === 0) return;
+    if (!editable || selected.length === 0) return;
     const nuove: Struttura[] = selected.map((n) => ({
       tipo_struttura: 'corona_singola',
       elementi_dentali: [n],
     }));
-    onChange([...value, ...nuove]);
+    onChange!([...value, ...nuove]);
     setSelected([]);
   }
 
   function addAsPonte() {
-    if (selected.length < 2) return;
+    if (!editable || selected.length < 2) return;
     const ordered = [...selected].sort((a, b) => a - b);
-    onChange([...value, { tipo_struttura: 'ponte', elementi_dentali: ordered }]);
+    onChange!([...value, { tipo_struttura: 'ponte', elementi_dentali: ordered }]);
     setSelected([]);
   }
 
@@ -82,9 +84,11 @@ export function Odontogramma({ value, onChange }: Props) {
           <button
             key={n}
             type="button"
-            className={classForTooth(n)}
+            className={classForTooth(n) + (readonly ? ' tooth--readonly' : '')}
             onClick={() => toggleTooth(n)}
+            disabled={readonly}
             title={
+              readonly ? `Dente ${n}` :
               toothToStructIdx.has(n)
                 ? 'Click per rimuovere la struttura'
                 : 'Click per selezionare'
@@ -111,49 +115,53 @@ export function Odontogramma({ value, onChange }: Props) {
         </div>
       </div>
 
-      <div className="odontogramma-actions">
-        <div className="muted">
-          {selected.length === 0
-            ? 'Clicca i denti su cui agire'
-            : `Selezionati: ${selected.sort((a, b) => a - b).join(', ')}`}
+      {editable && (
+        <div className="odontogramma-actions">
+          <div className="muted">
+            {selected.length === 0
+              ? 'Clicca i denti su cui agire'
+              : `Selezionati: ${selected.sort((a, b) => a - b).join(', ')}`}
+          </div>
+          <div className="odontogramma-buttons">
+            <button
+              type="button"
+              disabled={selected.length === 0}
+              onClick={addAsCoronaSingola}
+            >
+              Corone singole
+            </button>
+            <button type="button" disabled={selected.length < 2} onClick={addAsPonte}>
+              Crea ponte
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={selected.length === 0}
+              onClick={clearSelection}
+            >
+              Annulla
+            </button>
+          </div>
         </div>
-        <div className="odontogramma-buttons">
-          <button
-            type="button"
-            disabled={selected.length === 0}
-            onClick={addAsCoronaSingola}
-          >
-            Corone singole
-          </button>
-          <button type="button" disabled={selected.length < 2} onClick={addAsPonte}>
-            Crea ponte
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={selected.length === 0}
-            onClick={clearSelection}
-          >
-            Annulla
-          </button>
-        </div>
-      </div>
+      )}
 
       {value.length > 0 && (
         <ul className="strutture-list">
           {value.map((s, i) => (
             <li key={i}>
               <span className={`pill pill--${s.tipo_struttura}`}>
-                {s.tipo_struttura === 'ponte' ? 'Ponte' : 'Corona'}
+                {s.tipo_struttura === 'ponte' ? 'Ponte' : 'Corona singola'}
               </span>
               <span>{s.elementi_dentali.join(' – ')}</span>
-              <button
-                type="button"
-                className="btn-link"
-                onClick={() => onChange(value.filter((_, j) => j !== i))}
-              >
-                Rimuovi
-              </button>
+              {editable && (
+                <button
+                  type="button"
+                  className="btn-link"
+                  onClick={() => onChange!(value.filter((_, j) => j !== i))}
+                >
+                  Rimuovi
+                </button>
+              )}
             </li>
           ))}
         </ul>

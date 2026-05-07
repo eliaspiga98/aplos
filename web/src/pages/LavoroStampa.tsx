@@ -1,13 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, type LavoroDettaglio } from '../api';
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('it-IT');
-}
+import { formatDate, labelStatoLavoro, labelTipoStruttura, labelCategoria } from '../utils/format';
 
 function formatBytes(b: string | null): string {
   if (!b) return '';
@@ -79,7 +73,7 @@ export function LavoroStampaPage() {
               <tr><th>Paziente</th><td>{data.nome_paziente}</td></tr>
               <tr><th>Data entrata</th><td>{formatDate(data.data_entrata)}</td></tr>
               <tr><th>Data consegna</th><td><strong>{formatDate(data.data_consegna)}</strong></td></tr>
-              <tr><th>Stato</th><td>{data.stato}</td></tr>
+              <tr><th>Stato</th><td>{labelStatoLavoro(data.stato)}</td></tr>
             </tbody>
           </table>
         </section>
@@ -111,7 +105,7 @@ export function LavoroStampaPage() {
               {data.strutture.map((s) => (
                 <li key={s.id}>
                   <span className={`scheda-pill scheda-pill--${s.tipo_struttura}`}>
-                    {s.tipo_struttura === 'ponte' ? 'Ponte' : 'Corona'}
+                    {labelTipoStruttura(s.tipo_struttura)}
                   </span>
                   <span className="scheda-denti">{s.elementi_dentali.join(' – ')}</span>
                 </li>
@@ -137,7 +131,7 @@ export function LavoroStampaPage() {
               <tbody>
                 {data.materiali.map((m) => (
                   <tr key={m.id}>
-                    <td>{m.categoria}</td>
+                    <td>{labelCategoria(m.categoria)}</td>
                     <td>
                       {m.marca ?? '—'}
                       {m.colore ? ` ${m.colore}` : ''}

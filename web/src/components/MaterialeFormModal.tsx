@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal } from './Modal';
 import { useToast } from './Toaster';
 import { api, ApiError, type CategoriaMateriale, type Deposito, type Materiale, type StatoUtilizzo } from '../api';
+import { CATEGORIA_LABEL, STATO_UTILIZZO_LABEL } from '../utils/format';
 
 interface Props {
   open: boolean;
@@ -120,7 +121,7 @@ export function MaterialeFormModal({ open, onClose, onCreated }: Props) {
                 value={form.categoria}
                 onChange={(e) => setForm({ ...form, categoria: e.target.value as CategoriaMateriale })}
               >
-                {CATEGORIE.map((c) => <option key={c} value={c}>{c}</option>)}
+                {CATEGORIE.map((c) => <option key={c} value={c}>{CATEGORIA_LABEL[c]}</option>)}
               </select>
             </label>
             <label>
@@ -230,7 +231,7 @@ export function MaterialeFormModal({ open, onClose, onCreated }: Props) {
                 value={form.stato_utilizzo}
                 onChange={(e) => setForm({ ...form, stato_utilizzo: e.target.value as StatoUtilizzo })}
               >
-                {STATI.map((s) => <option key={s} value={s}>{s}</option>)}
+                {STATI.map((s) => <option key={s} value={s}>{STATO_UTILIZZO_LABEL[s]}</option>)}
               </select>
             </label>
             <label>

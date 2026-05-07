@@ -6,7 +6,11 @@ import { AllegatiSection } from './AllegatiSection';
 import { LavoroFormModal } from './LavoroFormModal';
 import { useConfirm } from './ConfirmDialog';
 import { useToast } from './Toaster';
-import { api, ApiError, type LavoroDettaglio } from '../api';
+import { api, ApiError, type LavoroDettaglio, type TimelineEvent } from '../api';
+import {
+  formatDate, formatDateTime,
+  labelStatoLavoro, labelTipoStruttura, labelCategoria,
+} from '../utils/format';
 
 interface Props {
   idLavoro: number | null;
@@ -14,11 +18,37 @@ interface Props {
   onChanged: () => void;
 }
 
+function labelAzione(ev: TimelineEvent): string {
+  const d = ev.dettagli ?? {};
+  switch (ev.azione) {
+    case 'CREATE_LAVORO':
+      return `Lavoro creato (paziente "${(d['paziente'] as string) ?? '?'}")`;
+    case 'UPDATE_LAVORO':
+      return `Modifica campi: ${(d['campi'] as string[] | undefined)?.join(', ') ?? '—'}`;
+    case 'CAMBIO_STATO_LAVORO':
+      return `Stato: ${(d['da'] as string) ?? '?'} → ${(d['a'] as string) ?? '?'}`;
+    case 'UPDATE_STRUTTURE_LAVORO':
+      return `Strutture aggiornate (${(d['n_strutture'] as number) ?? 0})`;
+    case 'REGISTRA_MATERIALE':
+      return 'Consumo materiale registrato';
+    case 'UPLOAD_ALLEGATO':
+      return `Allegato caricato: ${(d['nome_file'] as string) ?? ''}`;
+    case 'DELETE_ALLEGATO':
+      return 'Allegato eliminato';
+    case 'DELETE_LAVORO':
+      return 'Lavoro eliminato';
+    default:
+      return ev.azione.replaceAll('_', ' ').toLowerCase();
+  }
+}
+
 export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
   const [data, setData] = useState<LavoroDettaglio | null>(null);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [showRegistra, setShowRegistra] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
   const confirm = useConfirm();
   const { push } = useToast();
   const navigate = useNavigate();
@@ -49,8 +79,12 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
     if (idLavoro == null) return;
     setLoading(true);
     try {
-      const d = await api.get<LavoroDettaglio>(`/api/lavori/${idLavoro}`);
+      const [d, t] = await Promise.all([
+        api.get<LavoroDettaglio>(`/api/lavori/${idLavoro}`),
+        api.get<TimelineEvent[]>(`/api/lavori/${idLavoro}/timeline`),
+      ]);
       setData(d);
+      setTimeline(t);
     } finally {
       setLoading(false);
     }
@@ -106,11 +140,15 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
               <dt>Paziente</dt>
               <dd>{data.nome_paziente}</dd>
               <dt>Stato</dt>
-              <dd>{data.stato}</dd>
+              <dd>
+                <span className={`stato-pill stato-pill--${data.stato}`}>
+                  {labelStatoLavoro(data.stato)}
+                </span>
+              </dd>
               <dt>Entrata</dt>
-              <dd>{data.data_entrata}</dd>
+              <dd>{formatDate(data.data_entrata)}</dd>
               <dt>Consegna</dt>
-              <dd>{data.data_consegna}</dd>
+              <dd>{formatDate(data.data_consegna)}</dd>
               <dt>Scala colori</dt>
               <dd>{data.scala_colori ?? <span className="muted">—</span>}</dd>
               <dt>Tipologia</dt>
@@ -129,7 +167,7 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
                 {data.strutture.map((s) => (
                   <li key={s.id}>
                     <span className={`pill pill--${s.tipo_struttura}`}>
-                      {s.tipo_struttura === 'ponte' ? 'Ponte' : 'Corona'}
+                      {labelTipoStruttura(s.tipo_struttura)}
                     </span>
                     <span>{s.elementi_dentali.join(' – ')}</span>
                   </li>
@@ -176,9 +214,9 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
                 <tbody>
                   {data.materiali.map((m) => (
                     <tr key={m.id}>
-                      <td>{new Date(m.created_at).toLocaleString('it-IT')}</td>
+                      <td>{formatDateTime(m.created_at)}</td>
                       <td>
-                        {m.categoria}
+                        {labelCategoria(m.categoria)}
                         {m.marca ? ` ${m.marca}` : ''}
                         {m.colore ? ` ${m.colore}` : ''}
                       </td>
@@ -206,6 +244,39 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
                 onChanged();
               }}
             />
+          </section>
+
+          <section>
+            <header className="section-header">
+              <h3>Storico ({timeline.length})</h3>
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => setShowTimeline((v) => !v)}
+              >
+                {showTimeline ? 'Nascondi' : 'Mostra'}
+              </button>
+            </header>
+            {showTimeline && (
+              timeline.length === 0 ? (
+                <p className="muted">Nessun evento registrato.</p>
+              ) : (
+                <ul className="timeline">
+                  {timeline.map((ev) => (
+                    <li key={ev.id} className="timeline-item">
+                      <span className="timeline-dot" />
+                      <div className="timeline-body">
+                        <div className="timeline-action">{labelAzione(ev)}</div>
+                        <div className="timeline-meta muted">
+                          {formatDateTime(ev.created_at)}
+                          {ev.operatore_nome ? ` · ${ev.operatore_nome}` : ''}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )
+            )}
           </section>
         </div>
       )}

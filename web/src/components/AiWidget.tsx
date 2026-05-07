@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import { useAuth } from '../auth';
+import { LavoroPreviewBlock } from './LavoroPreviewBlock';
 
 interface Message {
   role: 'user' | 'ai' | 'error';
@@ -24,13 +25,26 @@ interface AiHealth {
   error?: string;
 }
 
-const DEFAULT_W = 460;
-const DEFAULT_H = 620;
-const MIN_W = 360;
-const MIN_H = 420;
-const MAX_W = 1200;
+interface Chat {
+  id: string;
+  title: string;
+  messages: Message[];
+  input: string;
+  /** True se è arrivata una risposta AI in questa tab e l'utente non l'ha
+   *  ancora "vista" (pannello chiuso o tab non attiva). In memoria, non
+   *  persisto in localStorage. */
+  unread?: boolean;
+}
+
+const DEFAULT_W = 480;
+const DEFAULT_H = 640;
+const MIN_W = 380;
+const MIN_H = 460;
 const STORAGE_W = 'aplos:ai-panel:w';
 const STORAGE_H = 'aplos:ai-panel:h';
+const STORAGE_CHATS = 'aplos:ai-chats';
+const STORAGE_ACTIVE = 'aplos:ai-active';
+const MAX_TABS = 8;
 
 const SUGGESTIONS = [
   'Quanti lavori sono in corso?',
@@ -39,7 +53,6 @@ const SUGGESTIONS = [
   'Lavori che usano zirconio',
 ];
 
-// Colonne sempre nascoste nella DataTable della chat (rumore tecnico).
 const HIDDEN_COLUMNS = new Set([
   'created_at', 'updated_at', 'deleted_at',
   'pin_hash', 'attributi_extra', 'storage_path',
@@ -69,10 +82,10 @@ function formatCell(key: string, v: unknown): string {
   if (v === null || v === undefined) return '—';
   if (typeof v === 'string') {
     if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:/.test(v)) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
+      if (key.startsWith('data_') && m) return `${m[3]}/${m[2]}/${m[1]}`;
       const d = new Date(v);
-      if (!isNaN(d.getTime())) {
-        return key.startsWith('data_') ? d.toLocaleDateString('it-IT') : d.toLocaleString('it-IT');
-      }
+      if (!isNaN(d.getTime())) return d.toLocaleString('it-IT');
     }
     return v;
   }
@@ -80,13 +93,15 @@ function formatCell(key: string, v: unknown): string {
   return JSON.stringify(v);
 }
 
-interface RowAction { type: 'lavoro' | 'dottore' | 'materiale'; to: string }
+interface RowAction { type: 'lavoro' | 'dottore' | 'materiale'; to: string; idLavoro?: number }
 
 function detectRowAction(row: Record<string, unknown>): RowAction | null {
   const keys = Object.keys(row);
   const id = row['id'];
   if (id == null) return null;
-  if (keys.includes('nome_paziente')) return { type: 'lavoro', to: `/lavori?open=${id}` };
+  if (keys.includes('nome_paziente')) {
+    return { type: 'lavoro', to: `/lavori?open=${id}`, idLavoro: Number(id) };
+  }
   if (keys.includes('lotto') && keys.includes('categoria')) {
     return { type: 'materiale', to: `/materiali?q=${encodeURIComponent(String(row['lotto']))}` };
   }
@@ -150,19 +165,56 @@ function ChatBubbleIcon() {
   );
 }
 
+function newChat(): Chat {
+  return {
+    id: typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    title: 'Nuova',
+    messages: [],
+    input: '',
+  };
+}
+
+function loadChats(): { chats: Chat[]; activeId: string } {
+  try {
+    const raw = localStorage.getItem(STORAGE_CHATS);
+    const activeId = localStorage.getItem(STORAGE_ACTIVE) ?? '';
+    if (raw) {
+      const arr = JSON.parse(raw) as Chat[];
+      if (Array.isArray(arr) && arr.length > 0) {
+        const resolved = arr.find((c) => c.id === activeId)?.id ?? arr[0]!.id;
+        return { chats: arr, activeId: resolved };
+      }
+    }
+  } catch {
+    // ignora — partiremo con una chat nuova
+  }
+  const c = newChat();
+  return { chats: [c], activeId: c.id };
+}
+
 export function AiWidget() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
+
+  const initial = loadChats();
+  const [chats, setChats] = useState<Chat[]>(initial.chats);
+  const [activeId, setActiveId] = useState<string>(initial.activeId);
+  const active = chats.find((c) => c.id === activeId) ?? chats[0]!;
+
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<AiHealth | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Dimensioni del pannello (persistite). Memorizziamo solo a fine drag per
-  // evitare scritture continue su localStorage.
+  // Refs per leggere lo stato corrente dentro callback async.
+  const openRef = useRef(open);
+  const activeIdRef = useRef(activeId);
+  useEffect(() => { openRef.current = open; }, [open]);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
   const [size, setSize] = useState<{ w: number; h: number }>(() => {
     if (typeof window === 'undefined') return { w: DEFAULT_W, h: DEFAULT_H };
     const w = Number(localStorage.getItem(STORAGE_W));
@@ -173,7 +225,28 @@ export function AiWidget() {
     };
   });
 
-  // Health check una volta sola alla prima apertura.
+  // Persistenza chats. Non salviamo `unread` in localStorage: è uno stato
+  // della sessione, non una proprietà permanente della chat.
+  useEffect(() => {
+    try {
+      const toSave = chats.map(({ unread, ...rest }) => rest);
+      localStorage.setItem(STORAGE_CHATS, JSON.stringify(toSave));
+      localStorage.setItem(STORAGE_ACTIVE, activeId);
+    } catch {
+      // quota piena o private mode: ignora
+    }
+  }, [chats, activeId]);
+
+  // Quando il pannello viene aperto o l'utente cambia tab attiva, la tab
+  // attiva è "vista" → clear unread.
+  useEffect(() => {
+    if (!open) return;
+    setChats((curr) => curr.map((c) =>
+      c.id === activeId && c.unread ? { ...c, unread: false } : c,
+    ));
+  }, [open, activeId]);
+
+  // Health check al primo open
   useEffect(() => {
     if (!open || health) return;
     api.get<AiHealth>('/api/ai/health')
@@ -189,13 +262,17 @@ export function AiWidget() {
     window.addEventListener('keydown', onKey);
     inputRef.current?.focus();
     return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+  }, [open, activeId]);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, open]);
+  }, [active.messages, open, activeId]);
+
+  function patchActive(patch: Partial<Chat>) {
+    setChats((curr) => curr.map((c) => c.id === activeId ? { ...c, ...patch } : c));
+  }
 
   function handleRowClick(row: Record<string, unknown>) {
     const action = detectRowAction(row);
@@ -205,46 +282,93 @@ export function AiWidget() {
   }
 
   async function send(domandaOverride?: string) {
-    const q = (domandaOverride ?? input).trim();
+    const q = (domandaOverride ?? active.input).trim();
     if (!q || busy) return;
-    if (!domandaOverride) setInput('');
-    setMessages((m) => [...m, { role: 'user', text: q }]);
+
+    // Imposta titolo della tab dalla prima domanda
+    const newTitle = active.messages.length === 0
+      ? (q.length > 28 ? q.slice(0, 28) + '…' : q)
+      : active.title;
+
+    patchActive({
+      input: domandaOverride ? active.input : '',
+      messages: [...active.messages, { role: 'user', text: q }],
+      title: newTitle,
+    });
     setBusy(true);
+
+    // Capturiamo la tab al momento dell'invio: se l'utente cambia tab durante
+    // l'attesa, la risposta arriverà comunque nella tab giusta.
+    const targetChatId = activeId;
     try {
       const res = await api.post<ChatResponse>('/api/ai/chat', { domanda: q });
-      setMessages((m) => [
-        ...m,
-        { role: 'ai', text: res.risposta, dati: res.dati, righe: res.righe },
-      ]);
+      setChats((curr) => curr.map((c) => c.id === targetChatId ? {
+        ...c,
+        messages: [
+          ...c.messages,
+          { role: 'ai', text: res.risposta, dati: res.dati, righe: res.righe },
+        ],
+        unread: shouldMarkUnread(targetChatId) ? true : c.unread,
+      } : c));
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'Errore di rete';
-      setMessages((m) => [...m, { role: 'error', text: msg }]);
+      setChats((curr) => curr.map((c) => c.id === targetChatId ? {
+        ...c,
+        messages: [...c.messages, { role: 'error', text: msg }],
+        unread: shouldMarkUnread(targetChatId) ? true : c.unread,
+      } : c));
     } finally {
       setBusy(false);
     }
   }
 
-  function handleNewChat() {
-    setMessages([]);
-    setInput('');
+  /**
+   * Una nuova risposta è "unread" se al momento del rientro non viene letta
+   * dall'utente: pannello chiuso, oppure aperto ma su una tab diversa.
+   */
+  function shouldMarkUnread(chatId: string): boolean {
+    return !openRef.current || activeIdRef.current !== chatId;
+  }
+
+  function openNewTab() {
+    if (chats.length >= MAX_TABS) return;
+    const c = newChat();
+    setChats((curr) => [...curr, c]);
+    setActiveId(c.id);
+  }
+
+  function closeTab(id: string) {
+    setChats((curr) => {
+      const next = curr.filter((c) => c.id !== id);
+      if (next.length === 0) {
+        const created = newChat();
+        setActiveId(created.id);
+        return [created];
+      }
+      if (id === activeId) setActiveId(next[0]!.id);
+      return next;
+    });
+  }
+
+  function clearActive() {
+    patchActive({ messages: [], input: '', title: 'Nuova' });
     inputRef.current?.focus();
   }
 
-  // Drag handle in alto-sinistra: trascinare in su-sinistra ingrandisce.
+  // Drag handle in alto-sinistra. Limiti massimi = viewport (lasciamo solo
+  // un piccolo margine per non incollare il pannello agli angoli).
   function startResize(e: React.MouseEvent) {
     e.preventDefault();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startW = size.w;
-    const startH = size.h;
-    const maxH = window.innerHeight - 100;
-
+    const startX = e.clientX, startY = e.clientY;
+    const startW = size.w, startH = size.h;
     document.body.classList.add('is-resizing-ai');
-
     function move(ev: MouseEvent) {
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
-      const w = Math.min(MAX_W, Math.max(MIN_W, startW - dx));
+      // Margine destra/bottom = posizione FAB; margine top/sinistra = 1rem.
+      const maxW = window.innerWidth - 3 * 16; // 3rem totali
+      const maxH = window.innerHeight - 6 * 16; // 6rem (FAB sotto + spazio)
+      const w = Math.min(maxW, Math.max(MIN_W, startW - dx));
       const h = Math.min(maxH, Math.max(MIN_H, startH - dy));
       setSize({ w, h });
     }
@@ -252,7 +376,6 @@ export function AiWidget() {
       document.removeEventListener('mousemove', move);
       document.removeEventListener('mouseup', stop);
       document.body.classList.remove('is-resizing-ai');
-      // Persist
       const cur = sizeRef.current;
       localStorage.setItem(STORAGE_W, String(cur.w));
       localStorage.setItem(STORAGE_H, String(cur.h));
@@ -260,8 +383,6 @@ export function AiWidget() {
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', stop);
   }
-
-  // Riferimento sempre aggiornato per leggere la size finale al rilascio.
   const sizeRef = useRef(size);
   useEffect(() => { sizeRef.current = size; }, [size]);
 
@@ -271,16 +392,20 @@ export function AiWidget() {
     localStorage.removeItem(STORAGE_H);
   }
 
+  const totalUnread = chats.filter((c) => c.unread).length;
+  const showUnreadBadge = totalUnread > 0 && !open;
+
   return (
     <>
       <button
         type="button"
-        className={`ai-fab ${open ? 'ai-fab--open' : ''}`}
+        className={`ai-fab ${open ? 'ai-fab--open' : ''} ${showUnreadBadge ? 'ai-fab--unread' : ''}`}
         onClick={() => setOpen((v) => !v)}
-        aria-label={open ? 'Chiudi assistente' : 'Apri assistente'}
-        title="Aplo's buddy"
+        aria-label={open ? 'Chiudi assistente' : `Apri assistente${totalUnread > 0 ? ` (${totalUnread} non letti)` : ''}`}
+        title={totalUnread > 0 && !open ? `${totalUnread} risposte non lette` : "Aplo's buddy"}
       >
         {open ? '×' : <ChatBubbleIcon />}
+        {showUnreadBadge && <span className="ai-fab-dot" aria-hidden="true" />}
       </button>
 
       {open && (
@@ -290,7 +415,6 @@ export function AiWidget() {
           aria-label="Aplo's buddy"
           style={{ width: size.w, height: size.h }}
         >
-          {/* Resize handle in alto-sinistra (trascina per ingrandire/rimpicciolire) */}
           <div
             className="ai-panel-resize"
             onMouseDown={startResize}
@@ -323,16 +447,17 @@ export function AiWidget() {
               <button
                 type="button"
                 className="ai-panel-icon-btn"
-                onClick={handleNewChat}
-                disabled={messages.length === 0 && input.length === 0}
-                title="Nuova chat"
-                aria-label="Nuova chat"
+                onClick={clearActive}
+                disabled={active.messages.length === 0 && active.input.length === 0}
+                title="Pulisci questa scheda"
+                aria-label="Pulisci"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
                      stroke="currentColor" strokeWidth="2.2"
                      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M3 7h13M3 12h13M3 17h7" />
-                  <path d="M19 13v8M15 17h8" />
+                  <path d="M3 6h18" />
+                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <path d="M19 6l-1.4 14.1A2 2 0 0 1 15.6 22H8.4a2 2 0 0 1-2-1.9L5 6" />
                 </svg>
               </button>
               <button
@@ -351,17 +476,57 @@ export function AiWidget() {
             </div>
           </header>
 
+          {/* Tab bar */}
+          <div className="ai-tabs" role="tablist">
+            {chats.map((c) => (
+              <div
+                key={c.id}
+                role="tab"
+                aria-selected={c.id === activeId}
+                className={
+                  'ai-tab' +
+                  (c.id === activeId ? ' ai-tab--active' : '') +
+                  (c.unread && c.id !== activeId ? ' ai-tab--unread' : '')
+                }
+                onClick={() => setActiveId(c.id)}
+                title={c.unread && c.id !== activeId ? `${c.title} (nuove risposte)` : c.title}
+              >
+                {c.unread && c.id !== activeId && <span className="ai-tab-dot" aria-hidden="true" />}
+                <span className="ai-tab-title">{c.title || 'Nuova'}</span>
+                <button
+                  type="button"
+                  className="ai-tab-close"
+                  onClick={(e) => { e.stopPropagation(); closeTab(c.id); }}
+                  aria-label="Chiudi scheda"
+                  title="Chiudi scheda"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="ai-tab-new"
+              onClick={openNewTab}
+              disabled={chats.length >= MAX_TABS}
+              title={chats.length >= MAX_TABS ? `Massimo ${MAX_TABS} schede` : 'Nuova scheda'}
+              aria-label="Nuova scheda"
+            >
+              +
+            </button>
+          </div>
+
           {health && health.status !== 'ok' && (
             <div className="ai-panel-banner">
               {health.status === 'model_not_installed' && (
-                <>Il modello <code>{health.model}</code> non è installato. Esegui <code>ollama pull {health.model}</code>.</>
+                <>Il modello <code>{health.model}</code> non è installato.</>
               )}
               {health.status === 'error' && <>Ollama non raggiungibile.</>}
             </div>
           )}
 
           <div className="chat-messages" ref={scrollRef}>
-            {messages.length === 0 && (
+            {active.messages.length === 0 && (
               <div className="chat-empty">
                 <div className="chat-empty-logo">
                   <img src="/aplos_logo.jpg" alt="" />
@@ -385,37 +550,50 @@ export function AiWidget() {
                 </div>
               </div>
             )}
-            {messages.map((m, i) => (
-              <div key={i} className={`chat-row chat-row--${m.role}`}>
-                {m.role !== 'user' && (
-                  <div className={`chat-avatar chat-avatar--${m.role}`}>
-                    {m.role === 'ai' ? (
-                      <img src="/aplos_logo.jpg" alt="" />
-                    ) : '!'}
+            {active.messages.map((m, i) => {
+              // Quando il risultato è un singolo lavoro, mostriamo la mini-card
+              // ricca con odontogramma e allegati. La detezione è sulla shape
+              // dei dati: 1 riga, contiene `nome_paziente` e `id`.
+              const singleLavoroId =
+                m.role === 'ai' &&
+                m.dati && m.dati.length === 1 &&
+                'nome_paziente' in m.dati[0]! && 'id' in m.dati[0]!
+                  ? Number(m.dati[0]!['id'])
+                  : null;
+              return (
+                <div key={i} className={`chat-row chat-row--${m.role}`}>
+                  {m.role !== 'user' && (
+                    <div className={`chat-avatar chat-avatar--${m.role}`}>
+                      {m.role === 'ai' ? <img src="/aplos_logo.jpg" alt="" /> : '!'}
+                    </div>
+                  )}
+                  <div className={`chat-msg chat-msg--${m.role}`}>
+                    <div className="chat-msg-text">
+                      {m.text.trim().length > 0
+                        ? m.text
+                        : <em className="muted">(nessuna risposta testuale)</em>}
+                    </div>
+                    {singleLavoroId != null ? (
+                      <LavoroPreviewBlock idLavoro={singleLavoroId} />
+                    ) : (
+                      m.dati && m.dati.length > 0 && (
+                        <div className="chat-data">
+                          <div className="chat-data-label">
+                            {m.righe} {m.righe === 1 ? 'risultato' : 'risultati'}
+                          </div>
+                          <DataTable rows={m.dati} onRowClick={handleRowClick} />
+                        </div>
+                      )
+                    )}
                   </div>
-                )}
-                <div className={`chat-msg chat-msg--${m.role}`}>
-                  <div className="chat-msg-text">
-                    {m.text.trim().length > 0
-                      ? m.text
-                      : <em className="muted">(nessuna risposta testuale)</em>}
-                  </div>
-                  {m.dati && m.dati.length > 0 && (
-                    <div className="chat-data">
-                      <div className="chat-data-label">
-                        {m.righe} {m.righe === 1 ? 'risultato' : 'risultati'}
-                      </div>
-                      <DataTable rows={m.dati} onRowClick={handleRowClick} />
+                  {m.role === 'user' && (
+                    <div className="chat-avatar chat-avatar--user">
+                      {user?.nome?.[0]?.toUpperCase() ?? '?'}
                     </div>
                   )}
                 </div>
-                {m.role === 'user' && (
-                  <div className="chat-avatar chat-avatar--user">
-                    {user?.nome?.[0]?.toUpperCase() ?? '?'}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
             {busy && (
               <div className="chat-row chat-row--ai">
                 <div className="chat-avatar chat-avatar--ai">
@@ -430,23 +608,20 @@ export function AiWidget() {
 
           <form
             className="chat-input"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void send();
-            }}
+            onSubmit={(e) => { e.preventDefault(); void send(); }}
           >
             <input
               ref={inputRef}
               type="text"
               placeholder="Chiedi qualcosa…"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
+              value={active.input}
+              onChange={(e) => patchActive({ input: e.target.value })}
               disabled={busy}
             />
             <button
               type="submit"
               className="chat-send"
-              disabled={busy || input.trim().length === 0}
+              disabled={busy || active.input.trim().length === 0}
               aria-label="Invia"
               title="Invia"
             >

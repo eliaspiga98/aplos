@@ -366,6 +366,33 @@ export async function lavoriRoutes(app: FastifyInstance) {
   });
 
   /**
+   * Timeline degli eventi di un lavoro: leggiamo dall'audit_log filtrando per
+   * entità "lavori" + id_entita corrispondente. Aggiungiamo il nome
+   * dell'operatore tramite join.
+   */
+  app.get(
+    '/:id/timeline',
+    { schema: { params: IdParams } },
+    async (req, reply) => {
+      const { id } = req.params as { id: number };
+      // operatori vive sempre nel main DB; per la timeline interna al pool
+      // applicativo (req.pool) c'è una tabella operatori "speculare" anche
+      // nel DB demo.
+      const result = await req.pool.query(
+        `SELECT a.id, a.azione, a.dettagli, a.created_at,
+                a.id_operatore, o.nome AS operatore_nome
+         FROM audit_log a
+         LEFT JOIN operatori o ON o.id = a.id_operatore
+         WHERE a.entita = 'lavori' AND a.id_entita = $1
+         ORDER BY a.created_at DESC
+         LIMIT 200`,
+        [id],
+      );
+      return result.rows;
+    },
+  );
+
+  /**
    * Sostituisce TUTTE le strutture di un lavoro. Operazione transazionale:
    * delete delle vecchie + insert delle nuove. Le strutture vecchie possono
    * essere cancellate fisicamente (ON DELETE CASCADE su lavori_strutture)

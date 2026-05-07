@@ -193,3 +193,32 @@ export interface LavoroDettaglio extends Lavoro {
   allegati: Allegato[];
   materiali: MaterialeConsumato[];
 }
+
+export interface TimelineEvent {
+  id: number;
+  azione: string;
+  dettagli: Record<string, unknown>;
+  created_at: string;
+  id_operatore: number | null;
+  operatore_nome: string | null;
+}
+
+export interface DottoreStats {
+  dottore: Dottore;
+  counts: { in_attesa: number; in_corso: number; in_prova: number; finito: number };
+  riassunto: {
+    totale: number;
+    in_ritardo: number;
+    tempo_medio_giorni: number | null;
+    tempo_medio_finiti_giorni: number | null;
+  };
+  ultimi: Array<{
+    id: number;
+    nome_paziente: string;
+    data_entrata: string;
+    data_consegna: string;
+    stato: StatoLavoro;
+    scala_colori: string | null;
+    tipologia_lavoro: string | null;
+  }>;
+}
