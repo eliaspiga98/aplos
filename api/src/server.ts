@@ -20,6 +20,7 @@ import { materialiRoutes } from './routes/materiali.js';
 import { depositiRoutes } from './routes/depositi.js';
 import { allegatiRoutes } from './routes/allegati.js';
 import { aiRoutes } from './routes/ai.js';
+import { ollamaWarmup } from './ai/ollama.js';
 
 const SESSION_COOKIE = 'aplos_session';
 
@@ -92,6 +93,15 @@ async function start() {
     app.log.error(err);
     process.exit(1);
   }
+
+  // Pre-warm Ollama in background — non blocca lo start dell'API.
+  // Caricare il modello in memoria evita che il primo utente paghi un
+  // cold start di ~15-30s. Se Ollama non è raggiungibile (es. spento)
+  // logghiamo un warning ma il server resta up.
+  ollamaWarmup().then(
+    () => app.log.info('Ollama pre-warm completato'),
+    (err) => app.log.warn({ err: err instanceof Error ? err.message : err }, 'Ollama pre-warm fallito (continua senza)'),
+  );
 }
 
 start();

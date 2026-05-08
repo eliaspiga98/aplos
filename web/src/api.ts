@@ -62,6 +62,61 @@ export const api = {
 };
 
 /**
+ * POST con risposta NDJSON (newline-delimited JSON). Ogni riga del body
+ * è un evento JSON. Yieldata via async generator man mano che arriva.
+ * Il server in errore può chiudere lo stream con un evento {type:"error"}.
+ */
+export async function* streamNdjsonPost<T>(
+  path: string,
+  body: unknown,
+): AsyncGenerator<T, void, unknown> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    let message = `HTTP ${res.status}`;
+    try {
+      const parsed = text ? JSON.parse(text) : null;
+      if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+        message = String((parsed as { error: unknown }).error);
+      }
+    } catch {
+      // body non JSON, lasciamo HTTP code
+    }
+    throw new ApiError(res.status, message);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl = buf.indexOf('\n');
+    while (nl !== -1) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line.length > 0) {
+        try {
+          yield JSON.parse(line) as T;
+        } catch {
+          // riga corrotta, ignoro
+        }
+      }
+      nl = buf.indexOf('\n');
+    }
+  }
+  const tail = buf.trim();
+  if (tail.length > 0) {
+    try { yield JSON.parse(tail) as T; } catch { /* ignore */ }
+  }
+}
+
+/**
  * Upload multipart: NON usa la funzione `request` standard perché non vogliamo
  * l'header `Content-Type: application/json` — il browser deve impostare
  * `multipart/form-data; boundary=…` da solo.

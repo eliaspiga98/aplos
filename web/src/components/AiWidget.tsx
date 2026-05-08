@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, ApiError } from '../api';
+import { api, ApiError, streamNdjsonPost } from '../api';
 import { useAuth } from '../auth';
 import { LavoroPreviewBlock } from './LavoroPreviewBlock';
 
@@ -9,14 +9,34 @@ interface Message {
   text: string;
   righe?: number;
   dati?: Array<Record<string, unknown>>;
+  /** Stato corrente quando il messaggio AI è in costruzione via streaming.
+   *  Mostrato finché `text` è vuoto, poi scompare. */
+  phase?: ChatPhase;
 }
 
-interface ChatResponse {
-  sql: string;
-  righe: number;
-  dati: Array<Record<string, unknown>>;
-  risposta: string;
-}
+type ChatPhase =
+  | 'classifying'
+  | 'generating_sql'
+  | 'executing'
+  | 'retrying'
+  | 'answering';
+
+const PHASE_LABEL: Record<ChatPhase, string> = {
+  classifying: 'Classifico la domanda…',
+  generating_sql: 'Genero la query…',
+  executing: 'Eseguo la query…',
+  retrying: 'Riformulo la query…',
+  answering: 'Preparo la risposta…',
+};
+
+type ChatStreamEvent =
+  | { type: 'phase'; phase: ChatPhase; attempt?: number }
+  | { type: 'sql'; sql: string }
+  | { type: 'data'; rows: Array<Record<string, unknown>>; rowCount: number }
+  | { type: 'token'; text: string }
+  | { type: 'replace_answer'; text: string }
+  | { type: 'done'; tipo: 'sql' | 'info'; sql: string | null; righe: number; dati: Array<Record<string, unknown>>; risposta: string }
+  | { type: 'error'; error: string; details?: string; sql?: string; sql_raw?: string };
 
 interface AiHealth {
   status: 'ok' | 'model_not_installed' | 'error';
@@ -290,9 +310,15 @@ export function AiWidget() {
       ? (q.length > 28 ? q.slice(0, 28) + '…' : q)
       : active.title;
 
+    // Aggiungo subito il messaggio utente + un placeholder AI vuoto.
+    // Il placeholder verrà popolato progressivamente dagli eventi stream.
     patchActive({
       input: domandaOverride ? active.input : '',
-      messages: [...active.messages, { role: 'user', text: q }],
+      messages: [
+        ...active.messages,
+        { role: 'user', text: q },
+        { role: 'ai', text: '' },
+      ],
       title: newTitle,
     });
     setBusy(true);
@@ -300,23 +326,73 @@ export function AiWidget() {
     // Capturiamo la tab al momento dell'invio: se l'utente cambia tab durante
     // l'attesa, la risposta arriverà comunque nella tab giusta.
     const targetChatId = activeId;
+
+    // Helper che applica una patch all'ultimo messaggio AI della tab.
+    function patchLastAiMessage(patch: Partial<Message>): void {
+      setChats((curr) => curr.map((c) => {
+        if (c.id !== targetChatId) return c;
+        const last = c.messages[c.messages.length - 1];
+        if (!last || last.role !== 'ai') return c;
+        return {
+          ...c,
+          messages: [...c.messages.slice(0, -1), { ...last, ...patch }],
+        };
+      }));
+    }
+
+    function replaceLastAiMessageWithError(msg: string): void {
+      setChats((curr) => curr.map((c) => {
+        if (c.id !== targetChatId) return c;
+        const last = c.messages[c.messages.length - 1];
+        if (!last || last.role !== 'ai') {
+          return {
+            ...c,
+            messages: [...c.messages, { role: 'error', text: msg }],
+            unread: shouldMarkUnread(targetChatId) ? true : c.unread,
+          };
+        }
+        return {
+          ...c,
+          messages: [...c.messages.slice(0, -1), { role: 'error', text: msg }],
+          unread: shouldMarkUnread(targetChatId) ? true : c.unread,
+        };
+      }));
+    }
+
+    let answerText = '';
     try {
-      const res = await api.post<ChatResponse>('/api/ai/chat', { domanda: q });
-      setChats((curr) => curr.map((c) => c.id === targetChatId ? {
-        ...c,
-        messages: [
-          ...c.messages,
-          { role: 'ai', text: res.risposta, dati: res.dati, righe: res.righe },
-        ],
-        unread: shouldMarkUnread(targetChatId) ? true : c.unread,
-      } : c));
+      for await (const evt of streamNdjsonPost<ChatStreamEvent>('/api/ai/chat', { domanda: q })) {
+        if (evt.type === 'phase') {
+          patchLastAiMessage({ phase: evt.phase });
+        } else if (evt.type === 'sql') {
+          // sql è informativo, lo lasciamo non-mostrato per ora
+        } else if (evt.type === 'data') {
+          patchLastAiMessage({ dati: evt.rows, righe: evt.rowCount });
+        } else if (evt.type === 'token') {
+          answerText += evt.text;
+          patchLastAiMessage({ text: answerText, phase: undefined });
+        } else if (evt.type === 'replace_answer') {
+          answerText = evt.text;
+          patchLastAiMessage({ text: answerText, phase: undefined });
+        } else if (evt.type === 'done') {
+          patchLastAiMessage({
+            text: evt.risposta,
+            dati: evt.dati,
+            righe: evt.righe,
+            phase: undefined,
+          });
+          // Marca unread se l'utente non sta guardando questa tab.
+          setChats((curr) => curr.map((c) => c.id === targetChatId
+            ? { ...c, unread: shouldMarkUnread(targetChatId) ? true : c.unread }
+            : c));
+        } else if (evt.type === 'error') {
+          replaceLastAiMessageWithError(evt.error);
+          break;
+        }
+      }
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'Errore di rete';
-      setChats((curr) => curr.map((c) => c.id === targetChatId ? {
-        ...c,
-        messages: [...c.messages, { role: 'error', text: msg }],
-        unread: shouldMarkUnread(targetChatId) ? true : c.unread,
-      } : c));
+      replaceLastAiMessageWithError(msg);
     } finally {
       setBusy(false);
     }
@@ -569,9 +645,18 @@ export function AiWidget() {
                   )}
                   <div className={`chat-msg chat-msg--${m.role}`}>
                     <div className="chat-msg-text">
-                      {m.text.trim().length > 0
-                        ? m.text
-                        : <em className="muted">(nessuna risposta testuale)</em>}
+                      {m.text.trim().length > 0 ? (
+                        m.text
+                      ) : m.phase ? (
+                        <span className="chat-phase">
+                          <span className="chat-thinking-inline"><span /><span /><span /></span>
+                          <em className="muted">{PHASE_LABEL[m.phase]}</em>
+                        </span>
+                      ) : m.role === 'ai' && busy ? (
+                        <span className="chat-thinking-inline"><span /><span /><span /></span>
+                      ) : (
+                        <em className="muted">(nessuna risposta testuale)</em>
+                      )}
                     </div>
                     {singleLavoroId != null ? (
                       <LavoroPreviewBlock idLavoro={singleLavoroId} />
@@ -594,16 +679,6 @@ export function AiWidget() {
                 </div>
               );
             })}
-            {busy && (
-              <div className="chat-row chat-row--ai">
-                <div className="chat-avatar chat-avatar--ai">
-                  <img src="/aplos_logo.jpg" alt="" />
-                </div>
-                <div className="chat-msg chat-msg--ai chat-thinking">
-                  <span /><span /><span />
-                </div>
-              </div>
-            )}
           </div>
 
           <form

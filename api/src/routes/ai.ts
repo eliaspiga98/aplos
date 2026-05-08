@@ -7,7 +7,8 @@ import { logAudit } from '../audit.js';
 import { requireAuth } from '../auth/guards.js';
 import { SCHEMA_DESCRIPTION } from '../ai/schema-description.js';
 import { extractAndValidateSql, rewriteAggregateOnlyToList } from '../ai/sql-guard.js';
-import { ollamaChat } from '../ai/ollama.js';
+import { ollamaChat, ollamaChatStream } from '../ai/ollama.js';
+import { quickClassify } from '../ai/classify.js';
 
 const ChatBody = Type.Object({
   domanda: Type.String({ minLength: 1, maxLength: 1000 }),
@@ -222,46 +223,79 @@ export async function aiRoutes(app: FastifyInstance) {
   app.post('/chat', { schema: { body: ChatBody } }, async (req, reply) => {
     const { domanda } = req.body as { domanda: string };
 
-    // STEP 0: classificazione DATI vs INFO. Una chiamata leggera all'LLM con
-    // prompt di sola classificazione. Se l'utente sta chiedendo qualcosa di
-    // generale sul gestionale, evitiamo del tutto il flusso text-to-SQL.
+    // Streaming NDJSON: il client legge il body in chunk e mostra
+    // progressivamente fasi, query, dati e risposta finale.
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      'Content-Type': 'application/x-ndjson',
+      'Cache-Control': 'no-cache',
+      // Disabilita il buffering quando dietro a nginx in produzione.
+      'X-Accel-Buffering': 'no',
+    });
+    const send = (event: Record<string, unknown>): void => {
+      reply.raw.write(JSON.stringify(event) + '\n');
+    };
+    const finish = (): void => {
+      reply.raw.end();
+    };
+
+    // STEP 0: classificazione DATI vs INFO.
+    // Prima euristica (no LLM): se la domanda è chiaramente DATI o INFO
+    // saltiamo del tutto la chiamata classificatore — risparmiamo ~1/3
+    // della latenza totale nel caso comune.
     let kind: 'sql' | 'info' = 'sql';
-    try {
-      const cls = await ollamaChat([
-        { role: 'system', content: CLASSIFIER_PROMPT },
-        ...CLASSIFIER_FEW_SHOT,
-        { role: 'user', content: domanda },
-      ]);
-      kind = /\bINFO\b/i.test(cls) && !/\bDATI\b/i.test(cls) ? 'info' : 'sql';
-    } catch (err) {
-      req.log.warn({ err }, 'classifier failed, fallback to sql');
+    const quick = quickClassify(domanda);
+    if (quick !== null) {
+      kind = quick;
+    } else {
+      send({ type: 'phase', phase: 'classifying' });
+      try {
+        const cls = await ollamaChat(
+          [
+            { role: 'system', content: CLASSIFIER_PROMPT },
+            ...CLASSIFIER_FEW_SHOT,
+            { role: 'user', content: domanda },
+          ],
+          { numPredict: 4 },
+        );
+        kind = /\bINFO\b/i.test(cls) && !/\bDATI\b/i.test(cls) ? 'info' : 'sql';
+      } catch (err) {
+        req.log.warn({ err }, 'classifier failed, fallback to sql');
+      }
     }
 
     if (kind === 'info') {
-      let answer: string;
+      send({ type: 'phase', phase: 'answering' });
+      let buffer = '';
       try {
-        answer = await ollamaChat([
+        for await (const chunk of ollamaChatStream([
           { role: 'system', content: INFO_SYSTEM_PROMPT },
           { role: 'user', content: domanda },
-        ]);
+        ])) {
+          buffer += chunk;
+          send({ type: 'token', text: chunk });
+        }
       } catch (err) {
         req.log.error({ err }, 'Ollama irraggiungibile (info)');
-        return reply.code(503).send({
-          error: 'Assistente AI non disponibile (Ollama irraggiungibile)',
-        });
+        send({ type: 'error', error: 'Assistente AI non disponibile (Ollama irraggiungibile)' });
+        finish();
+        return reply;
       }
       await logAudit(req.pool, {
         idOperatore: req.user!.id,
         azione: 'AI_INFO',
         dettagli: { domanda },
       });
-      return {
-        tipo: 'info' as const,
-        risposta: answer.trim(),
+      send({
+        type: 'done',
+        tipo: 'info',
+        risposta: buffer.trim(),
         sql: null,
         righe: 0,
         dati: [],
-      };
+      });
+      finish();
+      return reply;
     }
 
     // Few-shot: gli esempi nel prompt non bastano per qwen-coder, che ha un
@@ -352,6 +386,7 @@ export async function aiRoutes(app: FastifyInstance) {
       },
     ];
 
+    send({ type: 'phase', phase: 'generating_sql' });
     let rawSql: string;
     try {
       rawSql = await ollamaChat([
@@ -361,21 +396,25 @@ export async function aiRoutes(app: FastifyInstance) {
       ]);
     } catch (err) {
       req.log.error({ err }, 'Ollama irraggiungibile');
-      return reply.code(503).send({
-        error: 'Assistente AI non disponibile (Ollama irraggiungibile)',
-      });
+      send({ type: 'error', error: 'Assistente AI non disponibile (Ollama irraggiungibile)' });
+      finish();
+      return reply;
     }
 
     const guard = extractAndValidateSql(rawSql);
     if (!guard.ok || !guard.sql) {
-      return reply.code(400).send({
+      send({
+        type: 'error',
         error: `Query non valida: ${guard.reason ?? 'sconosciuto'}`,
         sql_raw: rawSql,
       });
+      finish();
+      return reply;
     }
     // Safety net: se nonostante few-shot il modello ha generato un COUNT da solo,
     // riscriviamo la query come SELECT * per mostrare anche le righe.
     guard.sql = rewriteAggregateOnlyToList(guard.sql);
+    send({ type: 'sql', sql: guard.sql });
 
     // Se l'operatore è in modalità demo, dobbiamo leggere dal DB demo (req.pool).
     // In produzione preferiamo la pool read-only dedicata. In ogni caso la
@@ -422,16 +461,21 @@ export async function aiRoutes(app: FastifyInstance) {
     const MAX_ATTEMPTS = 3;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (attempt === 1) send({ type: 'phase', phase: 'executing' });
+      else send({ type: 'phase', phase: 'retrying', attempt });
       triedQueries.push(currentSql);
       const r = await execReadOnly(currentSql);
 
       if (!r.ok) {
         req.log.warn({ err: r.message, sql: currentSql }, 'esecuzione SQL AI fallita');
-        return reply.code(400).send({
-          error: 'Errore nell\'esecuzione della query',
+        send({
+          type: 'error',
+          error: "Errore nell'esecuzione della query",
           details: r.message,
           sql: currentSql,
         });
+        finish();
+        return reply;
       }
       resultRows = r.rows;
       resultRowCount = r.rowCount;
@@ -471,12 +515,17 @@ export async function aiRoutes(app: FastifyInstance) {
       currentSql = next;
     }
 
-    // Aggiorna la sql "ufficiale" alla query che ha prodotto il risultato finale.
+    // Aggiorna la sql "ufficiale" alla query che ha prodotto il risultato finale
+    // (rilevante solo se è cambiata via retry; allora notifichiamo il client).
+    if (currentSql !== guard.sql) send({ type: 'sql', sql: currentSql });
     guard.sql = currentSql;
+    send({ type: 'data', rows: resultRows, rowCount: resultRowCount });
 
-    let answer: string;
+    send({ type: 'phase', phase: 'answering' });
+    let answer = '';
+    let streamingFailed = false;
     try {
-      const raw = await ollamaChat([
+      for await (const chunk of ollamaChatStream([
         { role: 'system', content: ANSWER_SYSTEM_PROMPT },
         {
           role: 'user',
@@ -488,13 +537,23 @@ export async function aiRoutes(app: FastifyInstance) {
             `\n\nFormula la risposta in italiano per l'operatore. ` +
             `Non includere codice SQL.`,
         },
-      ]);
-      answer = looksLikeCodeOnly(raw)
-        ? deterministicSummary(resultRows, resultRowCount)
-        : raw.trim();
+      ])) {
+        answer += chunk;
+        send({ type: 'token', text: chunk });
+      }
     } catch (err) {
       req.log.error({ err }, 'Ollama errore in fase di formulazione risposta');
-      answer = deterministicSummary(resultRows, resultRowCount);
+      streamingFailed = true;
+    }
+
+    // Se il modello ha generato solo codice (caso raro nonostante system prompt)
+    // o se lo streaming è fallito, sostituiamo con un riassunto deterministico.
+    // Notifichiamo il client di rimpiazzare i token già visti con la versione
+    // canonica (evento 'replace_answer').
+    let finalAnswer = answer.trim();
+    if (streamingFailed || looksLikeCodeOnly(answer)) {
+      finalAnswer = deterministicSummary(resultRows, resultRowCount);
+      send({ type: 'replace_answer', text: finalAnswer });
     }
 
     await logAudit(req.pool, {
@@ -503,12 +562,15 @@ export async function aiRoutes(app: FastifyInstance) {
       dettagli: { domanda, sql: guard.sql, n_righe: resultRowCount },
     });
 
-    return {
-      tipo: 'sql' as const,
+    send({
+      type: 'done',
+      tipo: 'sql',
       sql: guard.sql,
       righe: resultRowCount,
       dati: resultRows,
-      risposta: answer,
-    };
+      risposta: finalAnswer,
+    });
+    finish();
+    return reply;
   });
 }
