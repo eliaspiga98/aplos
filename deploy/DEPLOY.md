@@ -1,8 +1,14 @@
 # Aplo's — Deploy in laboratorio
 
 Runbook completo per installare Aplo's su una macchina dedicata in
-laboratorio (single-tenant, on-prem). Lo schema è: Postgres + Ollama + API
-Fastify (systemd) + frontend statico servito da nginx con HTTPS self-signed.
+laboratorio (single-tenant, on-prem). Lo schema è: Postgres + provider LLM
+locale (Ollama o MLX) + API Fastify (systemd) + frontend statico servito da
+nginx con HTTPS self-signed.
+
+Provider AI: il default è **Ollama** (multipiattaforma Linux/macOS). Su
+hardware Apple Silicon (deploy su Mac mini / Mac Studio) è disponibile anche
+**MLX** come provider alternativo, selezionabile dal pannello
+**Impostazioni → Modello AI** della UI senza riavviare il server.
 
 Tutto sotto `/opt/aplos`. Utente di sistema dedicato `aplos`.
 
@@ -11,8 +17,8 @@ Tutto sotto `/opt/aplos`. Utente di sistema dedicato `aplos`.
 ## 0. Prerequisiti hardware/software
 
 - Server Linux con accesso fisico al laboratorio (Debian 12 / Ubuntu 24.04 LTS
-  consigliati). 8 GB RAM minimi se Ollama gira sulla stessa macchina,
-  16 GB raccomandati.
+  consigliati). 8 GB RAM minimi se il provider LLM gira sulla stessa macchina,
+  16 GB raccomandati. Per il provider MLX serve un Mac con Apple Silicon (M1+).
 - IP statico in LAN (annotalo: ti serve per il certificato).
 - Hostname risolvibile dai client (via DNS interno del router o `/etc/hosts`).
   Esempio in questo runbook: `aplos.lan` su `192.168.1.50`.
@@ -91,8 +97,6 @@ SESSION_TTL_SECONDS=28800
 WEB_ORIGIN=https://aplos.lan
 UPLOADS_DIR=/opt/aplos/var/uploads
 UPLOAD_MAX_BYTES=52428800
-OLLAMA_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen2.5-coder:7b
 NODE_ENV=production
 ENV
 
@@ -247,6 +251,40 @@ Da un client del laboratorio:
    lavori in attesa?").
 5. Verifica che il backup del giorno dopo esista in `/var/backups/aplos/`.
 
+## 12b. Provider AI alternativo: MLX (solo Apple Silicon)
+
+Il provider attivo è gestito a runtime nella tabella `app_settings` ed è
+modificabile dal pannello **Impostazioni → Modello AI** della UI (admin
+only). Sotto è documentata l'installazione del runtime MLX, valida quando
+il deploy gira su un Mac con Apple Silicon (M1+). Su Linux salta la
+sezione: MLX non è disponibile, usa solo Ollama.
+
+```bash
+# pipx (se non già presente)
+brew install pipx
+pipx ensurepath
+
+# Installa il server MLX e scarica un modello iniziale
+scripts/install-mlx-server.sh mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
+```
+
+Lo script:
+1. installa `mlx-lm` via pipx,
+2. pre-scarica il modello indicato da Hugging Face,
+3. genera un plist launchd a partire dal template
+   `deploy/dev.aplos.mlx.plist` e lo registra come agente utente,
+4. attende che `http://127.0.0.1:8080/v1/models` risponda.
+
+Log: `~/Library/Logs/aplos-mlx.{out,err}.log`.
+Rimozione: `launchctl bootout gui/$(id -u)/dev.aplos.mlx` e rimuovi
+`~/Library/LaunchAgents/dev.aplos.mlx.plist`.
+
+Una volta che il server MLX è attivo, vai su **Impostazioni → Modello AI**
+nella UI, scegli "MLX (Apple Silicon)", indica l'HuggingFace ID del
+modello (autocompletato dai suggerimenti) e premi **Prova connessione**
+prima di salvare. Le impostazioni entrano in uso dal messaggio successivo
+della chat — niente riavvio API.
+
 ## 13. Aggiornamenti futuri
 
 ```bash
@@ -268,5 +306,7 @@ abbia rigenerato la cartella — niente da riavviare lato web.
 | Login non funziona | `journalctl -u aplos-api -n 200` |
 | Errore 502 da nginx | API down, vedi sopra |
 | Backup non parte | `journalctl -u aplos-backup.service` e `systemctl list-timers` |
-| AI risponde lento | `ollama ps`, RAM disponibile, modello caricato |
+| AI risponde lento (Ollama) | `ollama ps`, RAM disponibile, modello caricato |
+| AI risponde lento (MLX) | `~/Library/Logs/aplos-mlx.err.log`, `launchctl print gui/$(id -u)/dev.aplos.mlx` |
+| AI "Errore di rete" senza altro | `GET /api/admin/settings/ai/health` indica provider attivo e ready |
 | Allegati non si caricano | permessi su `/opt/aplos/var/uploads`, `client_max_body_size` in nginx, `UPLOAD_MAX_BYTES` in `.env` |

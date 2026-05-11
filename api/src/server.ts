@@ -20,7 +20,8 @@ import { materialiRoutes } from './routes/materiali.js';
 import { depositiRoutes } from './routes/depositi.js';
 import { allegatiRoutes } from './routes/allegati.js';
 import { aiRoutes } from './routes/ai.js';
-import { ollamaWarmup } from './ai/ollama.js';
+import { adminSettingsRoutes } from './routes/admin-settings.js';
+import { llmWarmup } from './ai/llm.js';
 
 const SESSION_COOKIE = 'aplos_session';
 
@@ -81,6 +82,7 @@ async function buildServer() {
   await app.register(depositiRoutes, { prefix: '/api/depositi' });
   await app.register(allegatiRoutes, { prefix: '/api' });
   await app.register(aiRoutes, { prefix: '/api/ai' });
+  await app.register(adminSettingsRoutes, { prefix: '/api/admin/settings' });
 
   return app;
 }
@@ -94,13 +96,13 @@ async function start() {
     process.exit(1);
   }
 
-  // Pre-warm Ollama in background — non blocca lo start dell'API.
+  // Pre-warm LLM in background — non blocca lo start dell'API.
   // Caricare il modello in memoria evita che il primo utente paghi un
-  // cold start di ~15-30s. Se Ollama non è raggiungibile (es. spento)
+  // cold start di ~15-30s. Se il provider non è raggiungibile (es. spento)
   // logghiamo un warning ma il server resta up.
-  ollamaWarmup().then(
-    () => app.log.info('Ollama pre-warm completato'),
-    (err) => app.log.warn({ err: err instanceof Error ? err.message : err }, 'Ollama pre-warm fallito (continua senza)'),
+  llmWarmup().then(
+    () => app.log.info('LLM pre-warm completato'),
+    (err) => app.log.warn({ err: err instanceof Error ? err.message : err }, 'LLM pre-warm fallito (continua senza)'),
   );
 }
 

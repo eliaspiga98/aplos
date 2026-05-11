@@ -7,7 +7,7 @@ import { logAudit } from '../audit.js';
 import { requireAuth } from '../auth/guards.js';
 import { SCHEMA_DESCRIPTION } from '../ai/schema-description.js';
 import { extractAndValidateSql, rewriteAggregateOnlyToList } from '../ai/sql-guard.js';
-import { ollamaChat, ollamaChatStream } from '../ai/ollama.js';
+import { llmChat, llmChatStream, llmHealth } from '../ai/llm.js';
 import { quickClassify } from '../ai/classify.js';
 
 const ChatBody = Type.Object({
@@ -200,17 +200,13 @@ export async function aiRoutes(app: FastifyInstance) {
 
   app.get('/health', async (_req, reply) => {
     try {
-      const res = await fetch(`${config.ollamaUrl}/api/tags`);
-      if (!res.ok) {
-        return reply.code(503).send({ status: 'error', error: `Ollama HTTP ${res.status}` });
-      }
-      const data = (await res.json()) as { models?: { name: string }[] };
-      const installed = (data.models ?? []).map((m) => m.name);
-      const ready = installed.includes(config.ollamaModel);
+      const h = await llmHealth();
+      if (h.error) return reply.code(503).send({ status: 'error', ...h });
       return {
-        status: ready ? 'ok' : 'model_not_installed',
-        model: config.ollamaModel,
-        installed,
+        status: h.ready ? 'ok' : 'model_not_installed',
+        provider: h.provider,
+        model: h.model,
+        installed: h.installed,
       };
     } catch (err) {
       return reply.code(503).send({
@@ -225,12 +221,17 @@ export async function aiRoutes(app: FastifyInstance) {
 
     // Streaming NDJSON: il client legge il body in chunk e mostra
     // progressivamente fasi, query, dati e risposta finale.
+    // NB: con reply.hijack() saltiamo gli hook Fastify, incluso quello che
+    // inietta gli header CORS — quindi li scriviamo a mano qui.
     reply.hijack();
     reply.raw.writeHead(200, {
       'Content-Type': 'application/x-ndjson',
       'Cache-Control': 'no-cache',
       // Disabilita il buffering quando dietro a nginx in produzione.
       'X-Accel-Buffering': 'no',
+      'Access-Control-Allow-Origin': config.webOrigin,
+      'Access-Control-Allow-Credentials': 'true',
+      Vary: 'Origin',
     });
     const send = (event: Record<string, unknown>): void => {
       reply.raw.write(JSON.stringify(event) + '\n');
@@ -250,7 +251,7 @@ export async function aiRoutes(app: FastifyInstance) {
     } else {
       send({ type: 'phase', phase: 'classifying' });
       try {
-        const cls = await ollamaChat(
+        const cls = await llmChat(
           [
             { role: 'system', content: CLASSIFIER_PROMPT },
             ...CLASSIFIER_FEW_SHOT,
@@ -268,7 +269,7 @@ export async function aiRoutes(app: FastifyInstance) {
       send({ type: 'phase', phase: 'answering' });
       let buffer = '';
       try {
-        for await (const chunk of ollamaChatStream([
+        for await (const chunk of llmChatStream([
           { role: 'system', content: INFO_SYSTEM_PROMPT },
           { role: 'user', content: domanda },
         ])) {
@@ -276,8 +277,8 @@ export async function aiRoutes(app: FastifyInstance) {
           send({ type: 'token', text: chunk });
         }
       } catch (err) {
-        req.log.error({ err }, 'Ollama irraggiungibile (info)');
-        send({ type: 'error', error: 'Assistente AI non disponibile (Ollama irraggiungibile)' });
+        req.log.error({ err }, 'LLM irraggiungibile (info)');
+        send({ type: 'error', error: 'Assistente AI non disponibile' });
         finish();
         return reply;
       }
@@ -340,6 +341,22 @@ export async function aiRoutes(app: FastifyInstance) {
           "WHERE d.nome ILIKE '%Rossi%' AND l.deleted_at IS NULL\n" +
           'ORDER BY l.data_consegna DESC LIMIT 100\n```',
       },
+      // Esempio cruciale: nome+cognome del dottore vanno su UNA SOLA colonna.
+      // Senza questo esempio i modelli tendono a generare
+      // `nome ILIKE '%X%' AND cognome ILIKE '%Y%'` che fallisce perché
+      // `cognome` non esiste.
+      {
+        role: 'user',
+        content: 'Contatti della dottoressa Giulia Romano',
+      },
+      {
+        role: 'assistant',
+        content:
+          '```sql\n' +
+          'SELECT id, nome, studio, telefono, email, indirizzo\n' +
+          "FROM dottori WHERE nome ILIKE '%Giulia Romano%' AND deleted_at IS NULL\n" +
+          'LIMIT 100\n```',
+      },
       {
         role: 'user',
         content: 'Quanti lavori abbiamo fatto questo mese, raggruppati per stato',
@@ -389,14 +406,14 @@ export async function aiRoutes(app: FastifyInstance) {
     send({ type: 'phase', phase: 'generating_sql' });
     let rawSql: string;
     try {
-      rawSql = await ollamaChat([
+      rawSql = await llmChat([
         { role: 'system', content: SQL_SYSTEM_PROMPT },
         ...FEW_SHOT,
         { role: 'user', content: domanda },
       ]);
     } catch (err) {
-      req.log.error({ err }, 'Ollama irraggiungibile');
-      send({ type: 'error', error: 'Assistente AI non disponibile (Ollama irraggiungibile)' });
+      req.log.error({ err }, 'LLM irraggiungibile');
+      send({ type: 'error', error: 'Assistente AI non disponibile' });
       finish();
       return reply;
     }
@@ -460,52 +477,68 @@ export async function aiRoutes(app: FastifyInstance) {
     let currentSql = guard.sql;
     const MAX_ATTEMPTS = 3;
 
+    let lastSqlError: string | null = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       if (attempt === 1) send({ type: 'phase', phase: 'executing' });
       else send({ type: 'phase', phase: 'retrying', attempt });
       triedQueries.push(currentSql);
       const r = await execReadOnly(currentSql);
 
-      if (!r.ok) {
-        req.log.warn({ err: r.message, sql: currentSql }, 'esecuzione SQL AI fallita');
-        send({
-          type: 'error',
-          error: "Errore nell'esecuzione della query",
-          details: r.message,
-          sql: currentSql,
-        });
-        finish();
-        return reply;
+      if (r.ok) {
+        resultRows = r.rows;
+        resultRowCount = r.rowCount;
+        lastSqlError = null;
+        if (resultRowCount > 0 || attempt === MAX_ATTEMPTS) break;
+      } else {
+        // Errore SQL (es. colonna inesistente): mostriamo l'errore al modello
+        // e gli chiediamo di correggere. È più robusto del fallire subito,
+        // soprattutto quando il modello inventa colonne (`cognome` su dottori
+        // ecc.).
+        req.log.warn({ err: r.message, sql: currentSql, attempt }, 'esecuzione SQL AI fallita');
+        lastSqlError = r.message;
+        if (attempt === MAX_ATTEMPTS) {
+          send({
+            type: 'error',
+            error: "Errore nell'esecuzione della query",
+            details: r.message,
+            sql: currentSql,
+          });
+          finish();
+          return reply;
+        }
       }
-      resultRows = r.rows;
-      resultRowCount = r.rowCount;
-      if (resultRowCount > 0 || attempt === MAX_ATTEMPTS) break;
 
-      // 0 righe: chiediamo riformulazione
+      // Costruiamo il messaggio di retry differenziato: errore SQL → fix
+      // della query; 0 righe → riformulazione semantica alternativa.
+      const retryUserMsg = lastSqlError
+        ? 'La query precedente è stata rigettata da PostgreSQL con questo errore:\n' +
+          `"${lastSqlError}"\n\n` +
+          'Correggi la query. Ricordati che lo schema mostrato sopra è ' +
+          'l\'unica fonte di verità: NON inventare colonne (es. nelle tabelle ' +
+          'operatori e dottori non esiste "cognome", il nome completo è in ' +
+          '"nome"). Genera SOLO la nuova query SQL.'
+        : 'La query precedente non ha restituito risultati. ' +
+          'Riformula con un\'interpretazione alternativa. ' +
+          'Considera che un nome può riferirsi a entità diverse: ' +
+          'paziente (lavori.nome_paziente), dottore (dottori.nome), ' +
+          'materiale (lotto/marca), deposito (depositi.nome). ' +
+          'Espressioni come "il dottore di X" o "i contatti di X" ' +
+          'spesso significano "il dottore associato al paziente X" — ' +
+          'in tal caso fai JOIN tra dottori e lavori filtrando per ' +
+          'lavori.nome_paziente. Allarga ILIKE con %...%. ' +
+          'Genera SOLO la nuova query SQL.';
+
       let retryRaw: string;
       try {
-        retryRaw = await ollamaChat([
+        retryRaw = await llmChat([
           { role: 'system', content: SQL_SYSTEM_PROMPT },
           ...FEW_SHOT,
           { role: 'user', content: domanda },
           { role: 'assistant', content: '```sql\n' + currentSql + '\n```' },
-          {
-            role: 'user',
-            content:
-              'La query precedente non ha restituito risultati. ' +
-              'Riformula con un\'interpretazione alternativa. ' +
-              'Considera che un nome può riferirsi a entità diverse: ' +
-              'paziente (lavori.nome_paziente), dottore (dottori.nome), ' +
-              'materiale (lotto/marca), deposito (depositi.nome). ' +
-              'Espressioni come "il dottore di X" o "i contatti di X" ' +
-              'spesso significano "il dottore associato al paziente X" — ' +
-              'in tal caso fai JOIN tra dottori e lavori filtrando per ' +
-              'lavori.nome_paziente. Allarga ILIKE con %...%. ' +
-              'Genera SOLO la nuova query SQL.',
-          },
+          { role: 'user', content: retryUserMsg },
         ]);
       } catch (err) {
-        req.log.warn({ err }, 'retry Ollama fallito');
+        req.log.warn({ err }, 'retry LLM fallito');
         break;
       }
       const retryGuard = extractAndValidateSql(retryRaw);
@@ -525,7 +558,7 @@ export async function aiRoutes(app: FastifyInstance) {
     let answer = '';
     let streamingFailed = false;
     try {
-      for await (const chunk of ollamaChatStream([
+      for await (const chunk of llmChatStream([
         { role: 'system', content: ANSWER_SYSTEM_PROMPT },
         {
           role: 'user',
@@ -542,7 +575,7 @@ export async function aiRoutes(app: FastifyInstance) {
         send({ type: 'token', text: chunk });
       }
     } catch (err) {
-      req.log.error({ err }, 'Ollama errore in fase di formulazione risposta');
+      req.log.error({ err }, 'LLM errore in fase di formulazione risposta');
       streamingFailed = true;
     }
 

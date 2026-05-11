@@ -6,7 +6,7 @@ import { AiWidget } from './AiWidget';
 import { labelRuolo } from '../utils/format';
 import {
   IconHome, IconBriefcase, IconUserMd, IconBox, IconWarehouse,
-  IconUsers, IconLogout, IconKey, IconClock,
+  IconUsers, IconLogout, IconKey, IconClock, IconSettings,
 } from './icons';
 
 interface NavItem {
@@ -25,6 +25,7 @@ const navItems: NavItem[] = [
   { to: '/materiali',  label: 'Materiali',  icon: IconBox },
   { to: '/depositi',   label: 'Depositi',   icon: IconWarehouse },
   { to: '/operatori',  label: 'Operatori',  icon: IconUsers, adminOnly: true },
+  { to: '/impostazioni', label: 'Impostazioni', icon: IconSettings, adminOnly: true },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {

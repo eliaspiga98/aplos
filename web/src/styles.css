@@ -61,11 +61,18 @@ button {
   border: none;
   padding: 0.55rem 1rem;
   border-radius: var(--radius);
-  transition: background var(--t-fast), transform var(--t-fast), box-shadow var(--t-fast);
+  transition: filter var(--t-fast), transform var(--t-fast), box-shadow var(--t-fast),
+              background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
   box-shadow: var(--shadow-sm);
 }
+/* Effetto hover generico: usa filter brightness invece di sovrascrivere il
+   background. Così funziona uniformemente sia per i bottoni "primary" navy
+   (che si scuriscono leggermente) sia per i bottoni con sfondo bianco/chiaro
+   custom (.chat-suggestion, .provider-btn, ecc.) senza forzare il testo a
+   diventare illeggibile per mancato contrasto. Le regole più specifiche
+   (es. `.chat-suggestion:hover`) possono comunque sovrascrivere il background. */
 button:hover:not(:disabled) {
-  background: var(--accent-hover);
+  filter: brightness(0.92);
   box-shadow: var(--shadow-md);
 }
 button:active:not(:disabled) { transform: translateY(1px); }
@@ -2589,4 +2596,88 @@ body.is-resizing-ai * { pointer-events: none; }
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
   letter-spacing: 0.05em;
+}
+
+/* ===== Pagina Impostazioni ============================================== */
+
+.settings-card { padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+.settings-card .card-header { padding: 0 0 0.75rem 0; align-items: center; }
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.5rem;
+  margin-top: 0.5rem;
+}
+@media (max-width: 720px) { .settings-grid { grid-template-columns: 1fr; } }
+
+.settings-grid label { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.9rem; }
+.settings-grid label > span { color: var(--navy); font-weight: 600; }
+.settings-grid input[type="text"] {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border, #d4dae4);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+.settings-grid input[type="text"]:focus {
+  outline: 2px solid var(--navy);
+  outline-offset: -1px;
+  border-color: var(--navy);
+}
+
+.provider-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border, #d4dae4);
+  border-radius: 6px;
+  overflow: hidden;
+  width: fit-content;
+}
+.provider-btn {
+  background: transparent;
+  border: none;
+  padding: 0.5rem 0.95rem;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--navy);
+  font-size: 0.9rem;
+}
+.provider-btn:hover { background: rgba(0, 0, 0, 0.04); }
+.provider-btn--active {
+  background: var(--navy);
+  color: white;
+}
+.provider-btn--active:hover { background: var(--navy); }
+
+.settings-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 1.25rem;
+  flex-wrap: wrap;
+}
+.btn-primary {
+  background: var(--navy);
+  color: white;
+  border: 1px solid var(--navy);
+}
+.btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.alert-ok, .alert-error {
+  padding: 0.6rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.alert-ok    { background: #e8f6ed; color: #1d6b3b; border: 1px solid #b9e0c6; }
+.alert-error { background: #fdecec; color: #8c1c1c; border: 1px solid #f1c2c2; }
+.alert-ok code, .alert-error code { background: rgba(0,0,0,0.06); padding: 0 0.3rem; border-radius: 3px; }
+
+.settings-help { padding: 1rem 1.5rem; }
+.settings-help ul { margin: 0.25rem 0 0; padding-left: 1.1rem; line-height: 1.55; }
+.settings-help li + li { margin-top: 0.5rem; }
+.settings-help code {
+  background: rgba(0,0,0,0.06);
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  font-size: 0.85em;
 }

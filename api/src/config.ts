@@ -21,7 +21,7 @@ export const config = {
   webOrigin: optional('WEB_ORIGIN', 'http://localhost:5173'),
   uploadsDir: optional('UPLOADS_DIR', 'var/uploads'),
   uploadMaxBytes: Number(optional('UPLOAD_MAX_BYTES', String(50 * 1024 * 1024))),
-  ollamaUrl: optional('OLLAMA_URL', 'http://localhost:11434'),
-  ollamaModel: optional('OLLAMA_MODEL', 'llama3.1:8b'),
+  // Provider AI e modello sono gestiti a runtime nella tabella `app_settings`
+  // (modificabile dal pannello /impostazioni admin), non dall'environment.
   isProduction: process.env.NODE_ENV === 'production',
 };

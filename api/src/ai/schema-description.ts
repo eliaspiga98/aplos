@@ -9,8 +9,15 @@ TABELLE:
 
 operatori(id, nome, ruolo, deleted_at, created_at, updated_at)
   ruolo: 'admin' | 'tecnico'
+  ATTENZIONE: \`nome\` è un campo unico (es. "Mario Rossi"). NON esiste
+  \`cognome\` come colonna separata.
 
 dottori(id, nome, studio, telefono, email, indirizzo, partita_iva, codice_fiscale, note, deleted_at, created_at, updated_at)
+  ATTENZIONE: \`nome\` è un campo unico contenente il nome completo
+  (es. "Dott. Mario Rossi", "Dott.ssa Giulia Romano"). NON esiste
+  \`cognome\` come colonna separata. Per cercare un dottore per nome
+  e cognome, usa \`nome ILIKE '%Mario Rossi%'\` su tutta la stringa,
+  NON \`nome ILIKE '%Mario%' AND cognome ILIKE '%Rossi%'\`.
 
 lavori(id, id_dottore, nome_paziente, data_entrata, data_consegna, stato, scala_colori, tipologia_lavoro, note_istruzioni, id_operatore_creazione, deleted_at, created_at, updated_at)
   stato: 'in_attesa' | 'in_corso' | 'in_prova' | 'finito'

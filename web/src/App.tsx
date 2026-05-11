@@ -10,6 +10,7 @@ import { DottoriPage } from './pages/Dottori';
 import { MaterialiPage } from './pages/Materiali';
 import { DepositiPage } from './pages/Depositi';
 import { OperatoriPage } from './pages/Operatori';
+import { ImpostazioniPage } from './pages/Impostazioni';
 import { useInactivityLogout } from './hooks/useInactivityLogout';
 
 const INACTIVITY_MINUTES = Number(import.meta.env.VITE_INACTIVITY_LOGOUT_MINUTES ?? '30');
@@ -48,6 +49,7 @@ export default function App() {
               <Route path="/materiali" element={<MaterialiPage />} />
               <Route path="/depositi" element={<DepositiPage />} />
               <Route path="/operatori" element={<OperatoriPage />} />
+              <Route path="/impostazioni" element={<ImpostazioniPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>
