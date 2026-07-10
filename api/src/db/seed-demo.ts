@@ -151,6 +151,25 @@ async function main() {
       { dottore: 4, paziente: 'Giorgio Neri',     entrata: -30,consegna: -15,stato: 'finito',    colore: 'A2', tipologia: 'Provvisorio PMMA',           strutture: [{ tipo: 'ponte', denti: [14, 15, 16, 17] }] },
       { dottore: 6, paziente: 'Valentina Bianchi',entrata: -28,consegna: -7, stato: 'finito',    colore: 'A3', tipologia: 'Scheletrato',                strutture: [{ tipo: 'corona_singola', denti: [13] }, { tipo: 'corona_singola', denti: [23] }, { tipo: 'corona_singola', denti: [33] }, { tipo: 'corona_singola', denti: [43] }] },
       { dottore: 1, paziente: 'Alessandro Lupo',  entrata: -15,consegna: -3, stato: 'finito',    colore: 'A2', tipologia: 'Corona singola',             strutture: [{ tipo: 'corona_singola', denti: [46] }] },
+
+      // batch aggiuntivo per arrivare a 35 lavori totali
+      // in_attesa (+2)
+      { dottore: 5, paziente: 'Nicola Ferri',     entrata: 0,  consegna: 15, stato: 'in_attesa', colore: 'A2', tipologia: 'Ponte 4 elementi posteriore', istruzioni: 'Antagonista in zirconio', strutture: [{ tipo: 'ponte', denti: [34, 35, 36, 37] }] },
+      { dottore: 6, paziente: 'Cristina Sartori', entrata: 1,  consegna: 20, stato: 'in_attesa', colore: 'BL2', tipologia: 'Corona estetica monolitica', strutture: [{ tipo: 'corona_singola', denti: [22] }] },
+
+      // in_corso (+3)
+      { dottore: 2, paziente: 'Matteo Barbieri',  entrata: -2, consegna: 8,  stato: 'in_corso',  colore: 'A3', tipologia: 'Ponte 3 elementi anteriore',  strutture: [{ tipo: 'ponte', denti: [22, 23, 24] }] },
+      { dottore: 4, paziente: 'Lucia Fontana',    entrata: -3, consegna: 6,  stato: 'in_corso',  colore: 'A1', tipologia: 'Faccette 4 elementi', istruzioni: 'Riduzione vestibolare 0.5mm', strutture: [{ tipo: 'corona_singola', denti: [12] }, { tipo: 'corona_singola', denti: [11] }, { tipo: 'corona_singola', denti: [21] }, { tipo: 'corona_singola', denti: [22] }] },
+      { dottore: 3, paziente: 'Vincenzo Palermo', entrata: -5, consegna: 4,  stato: 'in_corso',  colore: 'A3.5', tipologia: 'Corona su impianto molare', strutture: [{ tipo: 'corona_singola', denti: [46] }] },
+
+      // in_prova (+2)
+      { dottore: 5, paziente: 'Ilaria Colombo',   entrata: -7, consegna: 2,  stato: 'in_prova',  colore: 'B1', tipologia: 'Prova estetica faccetta',     strutture: [{ tipo: 'corona_singola', denti: [11] }] },
+      { dottore: 6, paziente: 'Giovanni Caputo',  entrata: -8, consegna: 0,  stato: 'in_prova',  colore: 'A3', tipologia: 'Prova metallo ponte',         strutture: [{ tipo: 'ponte', denti: [35, 36, 37] }] },
+
+      // finito (+3)
+      { dottore: 3, paziente: 'Rita Mancini',     entrata: -25,consegna: -11,stato: 'finito',    colore: 'A2', tipologia: 'Corona zirconio molare',      strutture: [{ tipo: 'corona_singola', denti: [27] }] },
+      { dottore: 4, paziente: 'Antonio Serra',    entrata: -32,consegna: -18,stato: 'finito',    colore: 'A3', tipologia: 'Scheletrato superiore',       strutture: [{ tipo: 'corona_singola', denti: [14] }, { tipo: 'corona_singola', denti: [16] }, { tipo: 'corona_singola', denti: [24] }, { tipo: 'corona_singola', denti: [26] }] },
+      { dottore: 5, paziente: 'Sofia Marini',     entrata: -19,consegna: -6, stato: 'finito',    colore: 'BL2', tipologia: 'Ponte estetico monolitico',  strutture: [{ tipo: 'ponte', denti: [13, 12, 11] }] },
     ];
 
     let lavoroIdx = 0;
