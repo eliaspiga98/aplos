@@ -136,8 +136,26 @@ export async function operatoriRoutes(app: FastifyInstance) {
   app.delete('/:id', { schema: { params: IdParams } }, async (req, reply) => {
     const { id } = req.params as { id: number };
 
-    if (id === req.user!.id) {
+    if (id === Number(req.user!.id)) {
       return reply.code(400).send({ error: 'Non puoi cancellare te stesso' });
+    }
+
+    const target = await pool.query<{ ruolo: Ruolo }>(
+      `SELECT ruolo FROM operatori WHERE id = $1 AND deleted_at IS NULL`,
+      [id],
+    );
+    if (!target.rows[0]) {
+      return reply.code(404).send({ error: 'Operatore non trovato' });
+    }
+    if (target.rows[0].ruolo === 'admin') {
+      const admins = await pool.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+         FROM operatori
+         WHERE ruolo = 'admin' AND deleted_at IS NULL`,
+      );
+      if (Number(admins.rows[0]?.count ?? 0) <= 1) {
+        return reply.code(400).send({ error: 'Deve rimanere almeno un amministratore attivo' });
+      }
     }
 
     const result = await pool.query<{ id: number }>(

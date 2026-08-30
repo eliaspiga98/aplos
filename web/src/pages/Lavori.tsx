@@ -40,27 +40,19 @@ export function LavoriPage() {
   useEffect(() => {
     if (viewKey) localStorage.setItem(viewKey, view);
   }, [view, viewKey]);
-  const [openId, setOpenId] = useState<number | null>(() => {
-    const v = searchParams.get('open');
-    return v ? Number(v) : null;
-  });
+  const openParam = Number(searchParams.get('open'));
+  const openId = Number.isInteger(openParam) && openParam > 0 ? openParam : null;
+
+  const setOpenId = useCallback((id: number | null) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (id != null) next.set('open', String(id));
+      else next.delete('open');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const debouncedQ = useDebouncedValue(q, 250);
-
-  // Sincronizza ?open=<id> nell'URL.
-  useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    if (openId != null) next.set('open', String(openId));
-    else next.delete('open');
-    if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true });
-    }
-  }, [openId, searchParams, setSearchParams]);
-
-  useEffect(() => {
-    const v = searchParams.get('open');
-    setOpenId(v ? Number(v) : null);
-  }, [searchParams]);
 
   const fetchLavori = useCallback(async (
     query: string,

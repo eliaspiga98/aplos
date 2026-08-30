@@ -4,6 +4,7 @@ import { useToast } from './Toaster';
 import { useConfirm } from './ConfirmDialog';
 import { api, ApiError, type Operatore } from '../api';
 import { RUOLO_LABEL } from '../utils/format';
+import { useAuth } from '../auth';
 
 interface Props {
   open: boolean;
@@ -26,6 +27,8 @@ export function OperatoreFormModal({ open, onClose, onSaved, operatore }: Props)
   const [busy, setBusy] = useState(false);
   const { push } = useToast();
   const confirm = useConfirm();
+  const { user } = useAuth();
+  const isCurrentUser = operatore?.id === user?.id;
 
   useEffect(() => {
     if (operatore) {
@@ -105,7 +108,7 @@ export function OperatoreFormModal({ open, onClose, onSaved, operatore }: Props)
       footer={
         <>
           <button type="button" className="btn-secondary" onClick={onClose}>Annulla</button>
-          {isEdit && (
+          {isEdit && !isCurrentUser && (
             <button type="button" className="btn-danger" onClick={() => void handleDelete()}>
               Elimina
             </button>
@@ -164,6 +167,11 @@ export function OperatoreFormModal({ open, onClose, onSaved, operatore }: Props)
             </div>
           </div>
         </label>
+        {isCurrentUser && (
+          <div className="muted" style={{ fontSize: '0.82rem' }}>
+            Non puoi eliminare l'account con cui hai effettuato l'accesso.
+          </div>
+        )}
         {error && <div className="error">{error}</div>}
       </form>
     </Modal>

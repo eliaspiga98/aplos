@@ -83,6 +83,25 @@ conservati. I log diagnostici sono in `var\logs`; gli allegati in
 PostgreSQL deve comunque essere incluso in un piano di backup. La comodità del
 launcher non sostituisce copie cifrate e testate dei dati sanitari.
 
+### Backup dalla pagina amministratore
+
+In **Impostazioni → Database e backup** l'amministratore può:
+
+- vedere nome, host e directory fisica del database PostgreSQL utilizzato;
+- indicare una cartella sul PC server, per esempio `D:\Backup\Aplos`;
+- eseguire subito un backup manuale;
+- pianificare un backup giornaliero o settimanale;
+- scegliere quante copie conservare automaticamente.
+
+I backup sono archivi PostgreSQL completi in formato custom (`.dump`) e si
+ripristinano con `pg_restore`. La pianificazione viene controllata mentre
+Aplo's è in esecuzione; se il PC era spento alla scadenza, il backup viene
+eseguito al successivo avvio. Per maggiore resilienza scegliere un disco
+diverso da quello del database oppure una cartella sincronizzata e cifrata.
+
+Gli allegati presenti in `var\uploads` sono file esterni al database e devono
+essere inclusi separatamente nel backup del PC.
+
 ## Avvio manuale da PowerShell
 
 I comandi equivalenti, dalla root del repository, sono:

@@ -26,6 +26,44 @@ interface AiTestResult {
   error?: string;
 }
 
+type BackupSchedule = 'disabled' | 'daily' | 'weekly';
+
+interface DatabaseSettings {
+  database: {
+    engine: 'PostgreSQL';
+    database_name: string;
+    server_host: string;
+    server_port: number;
+    server_address: string | null;
+    data_directory: string;
+  };
+  backup: {
+    backup_directory: string;
+    backup_directory_resolved: string;
+    backup_schedule: BackupSchedule;
+    backup_retention_count: number;
+    backup_last_at: string | null;
+    backup_last_file: string | null;
+    backup_last_size_bytes: number | null;
+    backup_last_error: string | null;
+    backup_running: boolean;
+  };
+}
+
+interface BackupForm {
+  backup_directory: string;
+  backup_schedule: BackupSchedule;
+  backup_retention_count: number;
+}
+
+function formatBytes(value: number | null): string {
+  if (value == null) return '—';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(1)} MB`;
+  return `${(value / 1024 ** 3).toFixed(2)} GB`;
+}
+
 /**
  * Suggerimenti modelli mostrati come datalist accanto al campo `ai_model`.
  * Liste curate per i due provider — l'utente può comunque digitare qualsiasi
@@ -58,20 +96,35 @@ export function ImpostazioniPage() {
   const [testResult, setTestResult] = useState<AiTestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [databaseSettings, setDatabaseSettings] = useState<DatabaseSettings | null>(null);
+  const [backupForm, setBackupForm] = useState<BackupForm | null>(null);
+  const [backupSnapshot, setBackupSnapshot] = useState<BackupForm | null>(null);
+  const [backupSaving, setBackupSaving] = useState(false);
+  const [backupRunning, setBackupRunning] = useState(false);
+  const [backupMessage, setBackupMessage] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, h] = await Promise.all([
+      const [s, h, database] = await Promise.all([
         api.get<AiSettings>('/api/admin/settings/ai'),
         api.get<AiHealth>('/api/admin/settings/ai/health').catch(
           (err: unknown) => (err instanceof ApiError ? null : null),
         ),
+        api.get<DatabaseSettings>('/api/admin/settings/database'),
       ]);
       setForm(s);
       setSavedSnapshot(s);
       setHealth(h);
+      setDatabaseSettings(database);
+      const nextBackup: BackupForm = {
+        backup_directory: database.backup.backup_directory,
+        backup_schedule: database.backup.backup_schedule,
+        backup_retention_count: database.backup.backup_retention_count,
+      };
+      setBackupForm(nextBackup);
+      setBackupSnapshot(nextBackup);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Errore di rete');
     } finally {
@@ -159,11 +212,55 @@ export function ImpostazioniPage() {
     }
   }
 
+  async function onBackupSave() {
+    if (!backupForm) return;
+    setBackupSaving(true);
+    setError(null);
+    setBackupMessage(null);
+    try {
+      await api.put('/api/admin/settings/database/backup', backupForm);
+      const database = await api.get<DatabaseSettings>('/api/admin/settings/database');
+      setDatabaseSettings(database);
+      const saved: BackupForm = {
+        backup_directory: database.backup.backup_directory,
+        backup_schedule: database.backup.backup_schedule,
+        backup_retention_count: database.backup.backup_retention_count,
+      };
+      setBackupForm(saved);
+      setBackupSnapshot(saved);
+      setBackupMessage('Configurazione backup salvata.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Errore di rete');
+    } finally {
+      setBackupSaving(false);
+    }
+  }
+
+  async function onBackupRun() {
+    setBackupRunning(true);
+    setError(null);
+    setBackupMessage(null);
+    try {
+      const result = await api.post<{ file: string; size_bytes: number }>('/api/admin/settings/database/backup/run');
+      setBackupMessage(`Backup completato: ${result.file} (${formatBytes(result.size_bytes)}).`);
+      setDatabaseSettings(await api.get<DatabaseSettings>('/api/admin/settings/database'));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Errore di rete');
+    } finally {
+      setBackupRunning(false);
+    }
+  }
+
   const dirty = form && savedSnapshot && (
     form.ai_provider !== savedSnapshot.ai_provider ||
     form.ai_model !== savedSnapshot.ai_model ||
     form.ollama_url !== savedSnapshot.ollama_url ||
     form.mlx_url !== savedSnapshot.mlx_url
+  );
+  const backupDirty = backupForm && backupSnapshot && (
+    backupForm.backup_directory !== backupSnapshot.backup_directory ||
+    backupForm.backup_schedule !== backupSnapshot.backup_schedule ||
+    backupForm.backup_retention_count !== backupSnapshot.backup_retention_count
   );
 
   return (
@@ -289,6 +386,125 @@ export function ImpostazioniPage() {
               </p>
             )}
           </section>
+
+          {databaseSettings && backupForm && (
+            <section className="card settings-card">
+              <header className="card-header">
+                <h2>Database e backup</h2>
+                {databaseSettings.backup.backup_running && (
+                  <span className="pill pill--tecnico">Backup in corso</span>
+                )}
+              </header>
+
+              <div className="database-location">
+                <div>
+                  <span>Database utilizzato</span>
+                  <code>{databaseSettings.database.database_name}</code>
+                </div>
+                <div>
+                  <span>Server PostgreSQL</span>
+                  <code>{databaseSettings.database.server_host}:{databaseSettings.database.server_port}</code>
+                </div>
+                <div className="database-location--wide">
+                  <span>Percorso dati PostgreSQL</span>
+                  <code>{databaseSettings.database.data_directory}</code>
+                </div>
+              </div>
+
+              <p className="muted">
+                Il percorso dati è gestito da PostgreSQL e non deve essere modificato o copiato
+                mentre il database è in esecuzione. Usa i backup qui sotto per creare copie consistenti.
+              </p>
+
+              <div className="settings-grid">
+                <label>
+                  <span>Cartella di salvataggio sul PC server</span>
+                  <input
+                    type="text"
+                    value={backupForm.backup_directory}
+                    onChange={(e) => {
+                      setBackupMessage(null);
+                      setBackupForm({ ...backupForm, backup_directory: e.target.value });
+                    }}
+                    placeholder="D:\\Backup\\Aplos"
+                  />
+                  <small className="muted">
+                    Percorso effettivo: {databaseSettings.backup.backup_directory_resolved}
+                  </small>
+                </label>
+
+                <label>
+                  <span>Backup automatico</span>
+                  <select
+                    value={backupForm.backup_schedule}
+                    onChange={(e) => {
+                      setBackupMessage(null);
+                      setBackupForm({ ...backupForm, backup_schedule: e.target.value as BackupSchedule });
+                    }}
+                  >
+                    <option value="disabled">Disattivato</option>
+                    <option value="daily">Ogni giorno</option>
+                    <option value="weekly">Ogni settimana</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Numero massimo di backup conservati</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={backupForm.backup_retention_count}
+                    onChange={(e) => {
+                      setBackupMessage(null);
+                      setBackupForm({ ...backupForm, backup_retention_count: Number(e.target.value) });
+                    }}
+                  />
+                </label>
+              </div>
+
+              <div className="settings-actions">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => void onBackupSave()}
+                  disabled={!backupDirty || backupSaving || backupRunning}
+                >
+                  {backupSaving ? 'Salvataggio…' : 'Salva configurazione'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void onBackupRun()}
+                  disabled={!!backupDirty || backupSaving || backupRunning}
+                >
+                  {backupRunning ? 'Backup in corso…' : 'Esegui backup ora'}
+                </button>
+                {backupDirty && <span className="muted">Salva prima le modifiche.</span>}
+              </div>
+
+              {backupMessage && <div className="alert-ok settings-backup-result">{backupMessage}</div>}
+              {databaseSettings.backup.backup_last_error && (
+                <div className="alert-error settings-backup-result">
+                  Ultimo errore: {databaseSettings.backup.backup_last_error}
+                </div>
+              )}
+
+              <div className="backup-last muted">
+                <span>
+                  Ultimo backup:{' '}
+                  <strong>
+                    {databaseSettings.backup.backup_last_at
+                      ? new Date(databaseSettings.backup.backup_last_at).toLocaleString('it-IT')
+                      : 'mai eseguito'}
+                  </strong>
+                </span>
+                {databaseSettings.backup.backup_last_file && (
+                  <span>File: <code>{databaseSettings.backup.backup_last_file}</code></span>
+                )}
+                <span>Dimensione: {formatBytes(databaseSettings.backup.backup_last_size_bytes)}</span>
+              </div>
+            </section>
+          )}
 
           <section className="card settings-help">
             <header className="card-header"><h2>Quando usare cosa</h2></header>

@@ -2613,14 +2613,18 @@ body.is-resizing-ai * { pointer-events: none; }
 
 .settings-grid label { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.9rem; }
 .settings-grid label > span { color: var(--navy); font-weight: 600; }
-.settings-grid input[type="text"] {
+.settings-grid input[type="text"],
+.settings-grid input[type="number"],
+.settings-grid select {
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border, #d4dae4);
   border-radius: 6px;
   font-family: inherit;
   font-size: 0.9rem;
 }
-.settings-grid input[type="text"]:focus {
+.settings-grid input[type="text"]:focus,
+.settings-grid input[type="number"]:focus,
+.settings-grid select:focus {
   outline: 2px solid var(--navy);
   outline-offset: -1px;
   border-color: var(--navy);
@@ -2680,4 +2684,38 @@ body.is-resizing-ai * { pointer-events: none; }
   padding: 0 0.3rem;
   border-radius: 3px;
   font-size: 0.85em;
+}
+
+.database-location {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem 1.5rem;
+  margin-bottom: 0.9rem;
+}
+.database-location > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.database-location span { color: var(--navy); font-size: 0.82rem; font-weight: 600; }
+.database-location code, .backup-last code {
+  overflow-wrap: anywhere;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  padding: 0.25rem 0.4rem;
+}
+.database-location--wide { grid-column: 1 / -1; }
+.settings-grid small { line-height: 1.35; overflow-wrap: anywhere; }
+.settings-backup-result { margin-top: 0.85rem; }
+.backup-last {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.9rem;
+  font-size: 0.85rem;
+}
+@media (max-width: 720px) {
+  .database-location { grid-template-columns: 1fr; }
+  .database-location--wide { grid-column: auto; }
 }

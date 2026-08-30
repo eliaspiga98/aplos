@@ -9,13 +9,17 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  // Fastify rifiuta con 400 un DELETE/POST vuoto se dichiariamo JSON senza
+  // inviare alcun body. Impostiamo il content type solo quando c'e davvero
+  // un payload da decodificare.
+  if (init.body !== undefined && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
   const res = await fetch(`${BASE_URL}${path}`, {
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
     ...init,
+    headers,
   });
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;

@@ -27,6 +27,7 @@ export const config = {
   webOrigin: optional('WEB_ORIGIN', 'http://localhost:5173'),
   uploadsDir: optional('UPLOADS_DIR', 'var/uploads'),
   uploadMaxBytes: Number(optional('UPLOAD_MAX_BYTES', String(50 * 1024 * 1024))),
+  pgDumpPath: optional('PG_DUMP_PATH', 'pg_dump'),
   // Provider AI e modello sono gestiti a runtime nella tabella `app_settings`
   // (modificabile dal pannello /impostazioni admin), non dall'environment.
   isProduction,

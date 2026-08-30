@@ -25,6 +25,7 @@ import { allegatiRoutes } from './routes/allegati.js';
 import { aiRoutes } from './routes/ai.js';
 import { adminSettingsRoutes } from './routes/admin-settings.js';
 import { llmWarmup } from './ai/llm.js';
+import { startBackupScheduler } from './db/backup.js';
 
 const SESSION_COOKIE = 'aplos_session';
 
@@ -127,6 +128,8 @@ async function start() {
     () => app.log.info('LLM pre-warm completato'),
     (err) => app.log.warn({ err: err instanceof Error ? err.message : err }, 'LLM pre-warm fallito (continua senza)'),
   );
+
+  startBackupScheduler();
 }
 
 start();

@@ -138,7 +138,7 @@ function Update-AplosPath {
   $postgresRoot = Join-Path $env:ProgramFiles "PostgreSQL"
   if (Test-Path $postgresRoot) {
     $postgresBins = Get-ChildItem $postgresRoot -Directory -ErrorAction SilentlyContinue |
-      Sort-Object Name -Descending |
+      Sort-Object @{ Expression = { [int]($_.Name -replace '\D.*$', '') }; Descending = $true } |
       ForEach-Object { Join-Path $_.FullName "bin" }
     $paths += $postgresBins
   }
