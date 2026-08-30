@@ -48,6 +48,27 @@ diretti:
 - **Chiudi Aplo's**: chiude la web app, scarica il modello dalla GPU e arresta
   soltanto i servizi che erano stati avviati da Aplo's.
 
+## Accesso dagli altri computer del laboratorio
+
+Il PC principale funziona anche da server per la rete locale. Il launcher
+mostra un indirizzo simile a `http://192.168.1.50:3001` e offre il pulsante
+**Copia indirizzo rete**. Incollalo nel browser degli altri PC collegati allo
+stesso router o Wi-Fi.
+
+La configurazione crea una regola di Windows Firewall per la sola porta TCP
+`3001`, limitata ai dispositivi della sottorete locale. PostgreSQL (`5432`) e
+Ollama (`11434`) non vengono esposti. Non configurare port forwarding sul
+router e non usare questo indirizzo da Internet.
+
+Se l'indirizzo cambia dopo il riavvio del router, copiarlo nuovamente dal
+launcher. Per mantenerlo stabile è consigliabile riservare l'indirizzo IP del
+PC principale nelle impostazioni DHCP del router.
+
+Questa modalità usa HTTP ed è adatta soltanto a una rete del laboratorio
+fidata e protetta con WPA2/WPA3. Per reti condivise, accesso remoto o requisiti
+più rigidi sui dati sanitari è necessario aggiungere HTTPS con un certificato
+distribuito ai PC oppure una VPN.
+
 È sicuro premere Avvia più volte: se il programma è già pronto viene soltanto
 aperto il browser. Le migrazioni vengono controllate a ogni avvio. Dopo un
 aggiornamento Git, il primo Avvia ricompila automaticamente il software.

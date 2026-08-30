@@ -40,6 +40,93 @@ function Initialize-AplosDirectories {
   New-Item -ItemType Directory -Force -Path (Join-Path $script:AplosRoot "var\uploads") | Out-Null
 }
 
+function Set-AplosEnvValue([string]$Path, [string]$Key, [string]$Value) {
+  if (-not (Test-Path $Path)) {
+    return $false
+  }
+
+  $lines = @(Get-Content $Path)
+  $prefix = "$Key="
+  $replacement = "$prefix$Value"
+  $found = $false
+  $changed = $false
+
+  for ($index = 0; $index -lt $lines.Count; $index++) {
+    if ($lines[$index].StartsWith($prefix, [StringComparison]::Ordinal)) {
+      $found = $true
+      if ($lines[$index] -ne $replacement) {
+        $lines[$index] = $replacement
+        $changed = $true
+      }
+    }
+  }
+
+  if (-not $found) {
+    $lines += $replacement
+    $changed = $true
+  }
+
+  if ($changed) {
+    [IO.File]::WriteAllLines($Path, [string[]]$lines, (New-Object Text.UTF8Encoding($false)))
+  }
+  return $changed
+}
+
+function Enable-AplosLanFirewall {
+  $ruleName = "Aplos-Web-LAN-3001"
+  $rule = Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue
+  if ($rule) {
+    $rule | Set-NetFirewallRule -Enabled True -Action Allow -Profile Any | Out-Null
+    $rule | Get-NetFirewallPortFilter | Set-NetFirewallPortFilter -Protocol TCP -LocalPort 3001 | Out-Null
+    $rule | Get-NetFirewallAddressFilter | Set-NetFirewallAddressFilter -RemoteAddress LocalSubnet | Out-Null
+    return
+  }
+
+  New-NetFirewallRule `
+    -Name $ruleName `
+    -DisplayName "Aplo's - accesso web dalla rete locale" `
+    -Description "Consente l'accesso ad Aplo's sulla porta TCP 3001 soltanto dalla sottorete locale." `
+    -Direction Inbound `
+    -Action Allow `
+    -Protocol TCP `
+    -LocalPort 3001 `
+    -RemoteAddress LocalSubnet `
+    -Profile Any | Out-Null
+}
+
+function Get-AplosLanUrls {
+  $addresses = @()
+  $ipConfigurations = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.IPv4DefaultGateway -and
+      $_.IPv4Address -and
+      $_.InterfaceAlias -notlike "*vEthernet*" -and
+      $_.InterfaceAlias -notlike "*VPN*" -and
+      $_.InterfaceAlias -notlike "*Loopback*" -and
+      $_.InterfaceAlias -notlike "*Bluetooth*"
+    }
+
+  foreach ($configuration in $ipConfigurations) {
+    foreach ($address in $configuration.IPv4Address) {
+      if ($address.IPAddress -and $address.IPAddress -notlike "169.254.*") {
+        $addresses += $address.IPAddress
+      }
+    }
+  }
+
+  if ($addresses.Count -eq 0) {
+    $addresses = Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred -ErrorAction SilentlyContinue |
+      Where-Object {
+        -not $_.SkipAsSource -and
+        $_.IPAddress -ne "127.0.0.1" -and
+        $_.IPAddress -notlike "169.254.*"
+      } |
+      ForEach-Object { $_.IPAddress }
+  }
+
+  return @($addresses | Select-Object -Unique | ForEach-Object { "http://$($_):3001" })
+}
+
 function Update-AplosPath {
   $paths = @(
     [Environment]::GetEnvironmentVariable("Path", "Machine"),

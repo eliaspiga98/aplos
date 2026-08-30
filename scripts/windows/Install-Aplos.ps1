@@ -127,10 +127,11 @@ if (-not (Test-Path $envFile)) {
     $environment = @"
 DATABASE_URL=postgresql://aplos:$appPassword@127.0.0.1:5432/aplos
 READONLY_DATABASE_URL=postgresql://aplos_readonly:$readonlyPassword@127.0.0.1:5432/aplos
-API_HOST=127.0.0.1
+API_HOST=0.0.0.0
 API_PORT=3001
 JWT_SECRET=$jwtSecret
 SESSION_TTL_SECONDS=28800
+COOKIE_SECURE=false
 WEB_ORIGIN=http://127.0.0.1:3001
 VITE_API_BASE_URL=
 UPLOADS_DIR=$rootForEnv/var/uploads
@@ -144,7 +145,12 @@ NODE_ENV=production
   }
 } else {
   Write-Host "==> Configurazione .env gia presente: viene conservata"
+  $null = Set-AplosEnvValue $envFile "API_HOST" "0.0.0.0"
+  $null = Set-AplosEnvValue $envFile "COOKIE_SECURE" "false"
 }
+
+Write-Host "==> Configurazione dell'accesso dalla rete locale"
+Enable-AplosLanFirewall
 
 Write-Host "==> Installazione delle dipendenze Aplo's"
 Push-Location $script:AplosRoot

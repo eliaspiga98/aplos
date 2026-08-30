@@ -13,13 +13,27 @@ if (Request-AplosElevation $PSCommandPath $forwardArguments) { exit }
 Initialize-AplosDirectories
 Update-AplosPath
 
+$envFile = Join-Path $script:AplosRoot ".env"
+$networkConfigurationChanged = $false
+if (Test-Path $envFile) {
+  $hostChanged = Set-AplosEnvValue $envFile "API_HOST" "0.0.0.0"
+  $cookieChanged = Set-AplosEnvValue $envFile "COOKIE_SECURE" "false"
+  $networkConfigurationChanged = $hostChanged -or $cookieChanged
+}
+Enable-AplosLanFirewall
+
+if ($networkConfigurationChanged -and (Test-AplosHttp "$script:AplosUrl/api/health")) {
+  Write-Host "==> Riavvio necessario per abilitare la rete locale"
+  & (Join-Path $PSScriptRoot "Stop-Aplos.ps1")
+}
+
 if (Test-AplosHttp "$script:AplosUrl/api/health") {
   Write-Host "Aplo's e gia avviato."
+  foreach ($lanUrl in (Get-AplosLanUrls)) { Write-Host "Rete locale: $lanUrl" }
   if (-not $NoBrowser) { Start-Process $script:AplosUrl }
   exit 0
 }
 
-$envFile = Join-Path $script:AplosRoot ".env"
 if (-not (Test-Path $envFile)) {
   throw "Prima configurazione non eseguita. Usa 'Aplos Launcher.cmd' e premi 'Prima configurazione'."
 }
@@ -95,4 +109,6 @@ if (-not (Wait-AplosHttp "$script:AplosUrl/api/health" 45)) {
 }
 
 Write-Host "Aplo's e pronto: $script:AplosUrl"
+Write-Host "Dagli altri computer del laboratorio:"
+foreach ($lanUrl in (Get-AplosLanUrls)) { Write-Host "  $lanUrl" }
 if (-not $NoBrowser) { Start-Process $script:AplosUrl }

@@ -78,7 +78,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     reply.setCookie(SESSION_COOKIE, token, {
       httpOnly: true,
-      secure: config.isProduction,
+      secure: config.cookieSecure,
       sameSite: 'lax',
       path: '/',
       maxAge: config.sessionTtlSeconds,
@@ -108,7 +108,11 @@ export async function authRoutes(app: FastifyInstance) {
         idEntita: req.user.id,
       });
     }
-    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    reply.clearCookie(SESSION_COOKIE, {
+      path: '/',
+      secure: config.cookieSecure,
+      sameSite: 'lax',
+    });
     return { status: 'ok' };
   });
 

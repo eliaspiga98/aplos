@@ -9,7 +9,7 @@ Add-Type -AssemblyName System.Drawing
 
 $form = New-Object Windows.Forms.Form
 $form.Text = "Aplo's"
-$form.Size = New-Object Drawing.Size(470, 355)
+$form.Size = New-Object Drawing.Size(470, 410)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
@@ -35,7 +35,21 @@ $status.AutoSize = $true
 $status.Location = New-Object Drawing.Point(31, 100)
 $form.Controls.Add($status)
 
+$network = New-Object Windows.Forms.Label
+$network.Font = New-Object Drawing.Font("Segoe UI", 9)
+$network.AutoSize = $false
+$network.Size = New-Object Drawing.Size(400, 38)
+$network.Location = New-Object Drawing.Point(31, 122)
+$form.Controls.Add($network)
+
 function Update-LauncherStatus {
+  $lanUrls = @(Get-AplosLanUrls)
+  if ($lanUrls.Count -gt 0) {
+    $network.Text = "Indirizzo per gli altri PC: $($lanUrls[0])"
+  } else {
+    $network.Text = "Indirizzo di rete non disponibile"
+  }
+
   if (Test-AplosHttp "$script:AplosUrl/api/health" 1) {
     $status.Text = "Stato: pronto"
     $status.ForeColor = [Drawing.Color]::FromArgb(30, 130, 76)
@@ -68,15 +82,15 @@ function Run-LauncherScript([string]$Name) {
   $script:actionProcess = Start-Process "powershell.exe" -ArgumentList $arguments -WorkingDirectory $script:AplosRoot -PassThru
 }
 
-$setupButton = New-LauncherButton "Prima configurazione / Aggiorna" 30 140 400
+$setupButton = New-LauncherButton "Prima configurazione / Aggiorna" 30 165 400
 $setupButton.Add_Click({ Run-LauncherScript "Install-Aplos.ps1" })
 $form.Controls.Add($setupButton)
 
-$startButton = New-LauncherButton "Avvia Aplo's" 30 200 190
+$startButton = New-LauncherButton "Avvia Aplo's" 30 225 190
 $startButton.Add_Click({ Run-LauncherScript "Start-Aplos.ps1" })
 $form.Controls.Add($startButton)
 
-$openButton = New-LauncherButton "Apri Aplo's" 240 200 190
+$openButton = New-LauncherButton "Apri Aplo's" 240 225 190
 $openButton.Add_Click({
   if (Test-AplosHttp "$script:AplosUrl/api/health" 2) {
     Start-Process $script:AplosUrl
@@ -86,7 +100,19 @@ $openButton.Add_Click({
 })
 $form.Controls.Add($openButton)
 
-$stopButton = New-LauncherButton "Chiudi tutto" 30 260 400
+$copyButton = New-LauncherButton "Copia indirizzo rete" 30 285 190
+$copyButton.Add_Click({
+  $lanUrls = @(Get-AplosLanUrls)
+  if ($lanUrls.Count -gt 0) {
+    [Windows.Forms.Clipboard]::SetText($lanUrls[0])
+    [Windows.Forms.MessageBox]::Show("Indirizzo copiato: $($lanUrls[0])", "Aplo's", "OK", "Information") | Out-Null
+  } else {
+    [Windows.Forms.MessageBox]::Show("Nessun indirizzo di rete disponibile.", "Aplo's", "OK", "Warning") | Out-Null
+  }
+})
+$form.Controls.Add($copyButton)
+
+$stopButton = New-LauncherButton "Chiudi tutto" 240 285 190
 $stopButton.Add_Click({ Run-LauncherScript "Stop-Aplos.ps1" })
 $form.Controls.Add($stopButton)
 
