@@ -1,132 +1,76 @@
-# Aplo's — installazione su Windows con NVIDIA e Ollama
+# Aplo's — installazione semplificata su Windows
 
-Questa guida prepara una postazione Windows per eseguire Aplo's e il modello
-locale `qwen3.5:9b-q4_K_M`. MLX non e disponibile su Windows: il provider da
-selezionare nell'applicazione e **Ollama**.
+Questa procedura prepara una postazione Windows con NVIDIA per eseguire in
+locale web app, PostgreSQL e Ollama con `qwen3.5:9b-q4_K_M`. Dopo la prima
+configurazione l'uso quotidiano richiede soltanto un doppio clic.
 
-## 1. Prerequisiti
+## Requisiti
 
-- Windows 10 22H2 o Windows 11, 64 bit.
-- Driver NVIDIA aggiornato (`nvidia-smi` deve mostrare la GPU).
-- [Ollama per Windows](https://ollama.com/download/windows).
-- Node.js 24 LTS, Git e PostgreSQL 16.
+- Windows 10 22H2 o Windows 11 a 64 bit;
+- driver NVIDIA aggiornato;
+- connessione Internet durante la prima configurazione;
+- almeno 20 GB liberi (codice, dipendenze, PostgreSQL e modello AI).
 
-Ollama per Windows gira in background ed espone l'API locale su
-`http://127.0.0.1:11434`. Non aprire la porta 11434 verso Internet: l'endpoint
-locale non richiede autenticazione.
+Ollama espone l'API soltanto su `http://127.0.0.1:11434`. Non pubblicare questa
+porta su Internet.
 
-## 2. Codice e dipendenze
+## Installazione iniziale
 
-Clona il repository e installa le dipendenze:
+1. Scarica o clona il repository in una cartella stabile, per esempio
+   `C:\Aplos`. Non spostare la cartella dopo la configurazione.
+2. Fai doppio clic su **Aplos Launcher.cmd**.
+3. Accetta la richiesta di Windows (UAC).
+4. Premi **Prima configurazione / Aggiorna**.
 
-```powershell
-git clone https://github.com/eliaspiga98/aplos.git C:\Aplos
-Set-Location C:\Aplos
-npm ci
-```
+Lo script installa automaticamente Node.js LTS e Ollama tramite Windows
+Package Manager. Se PostgreSQL non è presente, mostra il suo installer: lascia
+le opzioni predefinite e annota la password scelta. Subito dopo lo script
+chiede quella password una sola volta e poi:
 
-## 3. Modello AI
+- crea database, ruoli e password applicative casuali;
+- crea `.env` senza inserire segreti nel repository;
+- installa e compila Aplo's;
+- applica migrazioni e seed;
+- scarica `qwen3.5:9b-q4_K_M` (circa 6,6 GB);
+- crea i collegamenti sul Desktop;
+- avvia tutto e apre il browser.
 
-Da PowerShell nella root del repository:
+Il primo download può richiedere diversi minuti. L'utente iniziale è `Admin`
+con PIN `0000`: cambiarlo al primo accesso.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install-ollama-windows.ps1
-```
+## Uso quotidiano
 
-Lo script:
+Dal Desktop si può usare il launcher grafico **Aplo's**, oppure i due pulsanti
+diretti:
 
-1. verifica la presenza di Ollama e della GPU NVIDIA;
-2. esegue `ollama pull qwen3.5:9b-q4_K_M`;
-3. prova `/api/chat` con il thinking disabilitato;
-4. stampa i valori da usare nella pagina **Impostazioni → Modello AI**.
+- **Avvia Aplo's**: avvia PostgreSQL, Ollama e la web app, carica il modello e
+  apre `http://127.0.0.1:3001`;
+- **Chiudi Aplo's**: chiude la web app, scarica il modello dalla GPU e arresta
+  soltanto i servizi che erano stati avviati da Aplo's.
 
-Verifica che il modello sia caricato sulla GPU:
+È sicuro premere Avvia più volte: se il programma è già pronto viene soltanto
+aperto il browser. Le migrazioni vengono controllate a ogni avvio. Dopo un
+aggiornamento Git, il primo Avvia ricompila automaticamente il software.
 
-```powershell
-ollama ps
-```
+## Aggiornamento e manutenzione
 
-## 4. Database PostgreSQL
+Per una manutenzione ordinaria basta aprire il launcher e premere **Prima
+configurazione / Aggiorna**. Le configurazioni e i dati esistenti vengono
+conservati. I log diagnostici sono in `var\logs`; gli allegati in
+`var\uploads`.
 
-Apri SQL Shell (`psql`) o il Query Tool di pgAdmin come amministratore e crea
-il database e i due ruoli. Sostituisci le password prima di eseguire:
+PostgreSQL deve comunque essere incluso in un piano di backup. La comodità del
+launcher non sostituisce copie cifrate e testate dei dati sanitari.
 
-```sql
-CREATE USER aplos WITH PASSWORD 'CAMBIAMI';
-CREATE DATABASE aplos OWNER aplos;
+## Avvio manuale da PowerShell
 
-CREATE USER aplos_readonly WITH PASSWORD 'CAMBIAMI_RO';
-GRANT CONNECT ON DATABASE aplos TO aplos_readonly;
-```
-
-Riconnettiti al database `aplos`, poi esegui:
-
-```sql
-GRANT USAGE ON SCHEMA public TO aplos_readonly;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO aplos_readonly;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT ON TABLES TO aplos_readonly;
-```
-
-## 5. Configurazione Aplo's
-
-Crea `C:\Aplos\.env` senza commetterlo nel repository:
-
-```dotenv
-DATABASE_URL=postgresql://aplos:CAMBIAMI@localhost:5432/aplos
-READONLY_DATABASE_URL=postgresql://aplos_readonly:CAMBIAMI_RO@localhost:5432/aplos
-API_HOST=127.0.0.1
-API_PORT=3001
-JWT_SECRET=SOSTITUISCI_CON_ALMENO_64_CARATTERI_CASUALI
-SESSION_TTL_SECONDS=28800
-WEB_ORIGIN=http://localhost:5173
-UPLOADS_DIR=C:/Aplos/var/uploads
-UPLOAD_MAX_BYTES=52428800
-NODE_ENV=development
-```
-
-Prepara database e build:
+I comandi equivalenti, dalla root del repository, sono:
 
 ```powershell
-npm run migrate
-npm run seed
-npm run build
+powershell -ExecutionPolicy Bypass -File scripts/windows/Install-Aplos.ps1
+powershell -ExecutionPolicy Bypass -File scripts/windows/Start-Aplos.ps1
+powershell -ExecutionPolicy Bypass -File scripts/windows/Stop-Aplos.ps1
 ```
 
-Il seed crea l'utente `Admin` con PIN iniziale `0000`: cambialo subito.
-
-## 6. Avvio sulla singola postazione
-
-Apri due finestre PowerShell in `C:\Aplos`.
-
-Prima finestra, API:
-
-```powershell
-npm run dev:api
-```
-
-Seconda finestra, interfaccia:
-
-```powershell
-npm run dev:web
-```
-
-Apri `http://localhost:5173`, accedi come admin e verifica in
-**Impostazioni → Modello AI**:
-
-- provider: `Ollama`;
-- modello: `qwen3.5:9b-q4_K_M`;
-- URL Ollama: `http://127.0.0.1:11434`.
-
-Premi **Prova connessione**, salva e prova la domanda “Quanti lavori sono in
-corso?”.
-
-## 7. Note operative
-
-- Il modello pesa circa 6,6 GB; con 16 GB di VRAM rimane spazio per la cache.
-- Aplo's invia `think: false` perché classifier e generazione SQL richiedono
-  output breve e deterministico.
-- Per una postazione sempre accesa o accessibile dalla LAN, usare WSL2/Ubuntu
-  e il runbook `deploy/DEPLOY.md`, oppure predisporre servizi Windows dedicati.
-- I dati sanitari e i backup devono restare cifrati e non devono essere inviati
-  a provider LLM cloud.
+MLX resta il provider consigliato su Apple Silicon. Su Windows il launcher usa
+Ollama, che sfrutta automaticamente la GPU NVIDIA supportata.

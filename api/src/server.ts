@@ -6,6 +6,9 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
+import fastifyStatic from '@fastify/static';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { config } from './config.js';
 import { attachUser } from './auth/guards.js';
@@ -83,6 +86,26 @@ async function buildServer() {
   await app.register(allegatiRoutes, { prefix: '/api' });
   await app.register(aiRoutes, { prefix: '/api/ai' });
   await app.register(adminSettingsRoutes, { prefix: '/api/admin/settings' });
+
+  // In produzione l'API serve anche la build React. Cosi su Windows basta
+  // mantenere un solo processo applicativo e tutte le route SPA continuano a
+  // funzionare anche quando il browser viene aggiornato.
+  if (config.isProduction) {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const webRoot = resolve(here, '../../web/dist');
+
+    await app.register(fastifyStatic, {
+      root: webRoot,
+      wildcard: false,
+    });
+
+    app.setNotFoundHandler((request, reply) => {
+      if (request.url.startsWith('/api/')) {
+        return reply.code(404).send({ error: 'Route API non trovata' });
+      }
+      return reply.sendFile('index.html');
+    });
+  }
 
   return app;
 }
