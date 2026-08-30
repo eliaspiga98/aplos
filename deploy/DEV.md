@@ -122,7 +122,7 @@ launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/dev.aplos.mlx.plist
 brew services stop ollama
 ```
 
-Libera ~5 GB di RAM (modello qwen2.5-coder:7b scaricato dalla VRAM
+Libera ~7 GB di RAM (modello qwen3.5:9b-q4_K_M scaricato dalla VRAM
 condivisa Metal). Per riavviarlo: `brew services start ollama`.
 
 ### 4. Postgres — opzionale

@@ -65,7 +65,7 @@ Fastify API (Node 20+, TypeScript)
 progetto. Quando si parla di "Go" è solo perché **Ollama**, uno dei due
 provider LLM esterni, è scritto in Go (binario gestito da
 `brew services` in dev e da pacchetto OS in produzione Linux). L'altro
-provider è **MLX**: server Python (`mlx_lm.server`, gestito da pipx) che
+provider è **MLX**: server Python (`mlx_vlm.server`, gestito da pipx) che
 sfrutta direttamente Metal su Apple Silicon. Entrambi sono **processi
 separati** raggiunti via HTTP.
 
@@ -153,6 +153,7 @@ dalla root delegano ai workspace.
 | `0002_depositi.sql` | Tabella `depositi` (anagrafica nomi banchi/scaffali) + colonna `materiali.id_deposito` FK nullable. Rinomina vecchia colonna libera `materiali.deposito` → `deposito_legacy` per preservare dati esistenti senza migrarli forzatamente. |
 | `0003_usa_demo.sql` | Colonna `operatori.usa_demo BOOLEAN` per indirizzare un operatore al DB demo invece del principale. |
 | `0004_app_settings.sql` | Tabella singleton `app_settings` (`CHECK (id = 1)`) per provider LLM, modello, URL Ollama/MLX. Modificabile da `/impostazioni` admin a runtime. |
+| `0005_qwen35_defaults.sql` | Porta i vecchi default AI a Qwen 3.5, preservando eventuali modelli scelti manualmente. |
 
 ### 4.3 Modello — entità principali
 
@@ -427,13 +428,14 @@ TTL 5s, invalidata esplicitamente alla PUT delle settings) e costruisce
 il `LlmProvider` corrispondente. I provider sono in `providers/`:
 
 - **`ollama.ts`** — POST a `${ollama_url}/api/chat` con body
-  `{model, messages, stream, keep_alive: -1, options:{temperature,
+  `{model, messages, stream, think:false, keep_alive: -1, options:{temperature,
   num_predict}}`. Streaming NDJSON. **Attenzione**: `keep_alive` deve
   essere il numero `-1` (intero), non la stringa `'-1'` — Ollama parsa
   il campo come Go `time.Duration` e rigetta `"-1"` con
   `time: missing unit in duration`.
 - **`mlx.ts`** — POST a `${mlx_url}/v1/chat/completions` con payload
-  OpenAI-compatible. Streaming SSE (`data: <json>\n\n`). `mlx_lm.server`
+  OpenAI-compatible e `enable_thinking:false`. Streaming SSE
+  (`data: <json>\n\n`). `mlx_vlm.server`
   non filtra i token speciali del chat template (`<|im_end|>`,
   `<|eot_id|>`, …): il provider li strippa lato server con regex
   `<\|[^|]+\|>` e un buffer di carryover per gestire split su più chunk
@@ -487,8 +489,8 @@ errori di inferenza del modello.
 
 ### 7.7 Modelli di riferimento
 
-Default seed: `qwen2.5-coder:7b` per Ollama e
-`mlx-community/Qwen2.5-Coder-7B-Instruct-4bit` per MLX. La pagina
+Default seed: `qwen3.5:9b-q4_K_M` per Ollama e
+`mlx-community/Qwen3.5-9B-MLX-4bit` per MLX. La pagina
 `/impostazioni` propone una lista di alternative ma accetta qualunque
 id (anche fine-tune custom).
 
@@ -618,6 +620,10 @@ Runbook completo: `deploy/DEPLOY.md`. Su Mac mini/Mac Studio in
 laboratorio è disponibile anche il provider MLX (sezione 12b di
 `DEPLOY.md`).
 
+Su Windows/NVIDIA il runtime AI supportato è Ollama. Per installazione e smoke
+test della postazione vedi `deploy/WINDOWS.md` e
+`scripts/install-ollama-windows.ps1`.
+
 Artefatti committati:
 
 | File | Cosa fa |
@@ -629,7 +635,8 @@ Artefatti committati:
 | `deploy/dev.aplos.mlx.plist` | template launchd agent per MLX (placeholder sostituiti dallo script) |
 | `scripts/backup.sh` | dump DB + uploads → tarball GPG-cifrato + retention 30g |
 | `scripts/generate-cert.sh` | cert self-signed 825g con SAN |
-| `scripts/install-mlx-server.sh` | installa mlx-lm, scarica modello, registra agent |
+| `scripts/install-mlx-server.sh` | installa mlx-vlm, carica il modello, registra agent |
+| `scripts/install-ollama-windows.ps1` | scarica Qwen 3.5 e prova Ollama su Windows/NVIDIA |
 
 ---
 
@@ -649,7 +656,7 @@ Pattern ricorrenti su cui inciampare:
 2. **Ollama `keep_alive: "-1"` (stringa)**: rifiutato con
    `time: missing unit in duration`. Va passato come **intero** `-1`.
 
-3. **MLX `<|im_end|>` nello stream**: `mlx_lm.server` non rimuove i
+3. **MLX `<|im_end|>` nello stream**: alcuni server MLX non rimuovono i
    token di stop del chat template; il provider deve fare strip
    (`api/src/ai/providers/mlx.ts`).
 

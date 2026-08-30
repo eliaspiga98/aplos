@@ -5,10 +5,12 @@ laboratorio (single-tenant, on-prem). Lo schema è: Postgres + provider LLM
 locale (Ollama o MLX) + API Fastify (systemd) + frontend statico servito da
 nginx con HTTPS self-signed.
 
-Provider AI: il default è **Ollama** (multipiattaforma Linux/macOS). Su
+Provider AI: il default è **Ollama** (Windows/Linux/macOS). Su
 hardware Apple Silicon (deploy su Mac mini / Mac Studio) è disponibile anche
 **MLX** come provider alternativo, selezionabile dal pannello
 **Impostazioni → Modello AI** della UI senza riavviare il server.
+
+Per una postazione Windows con GPU NVIDIA vedi `deploy/WINDOWS.md`.
 
 Tutto sotto `/opt/aplos`. Utente di sistema dedicato `aplos`.
 
@@ -29,13 +31,13 @@ Tutto sotto `/opt/aplos`. Utente di sistema dedicato `aplos`.
 sudo apt update
 sudo apt install -y postgresql-16 nginx openssl curl ca-certificates gnupg
 
-# Node 20 (richiesto per --env-file nativo)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# Node 24 LTS
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt install -y nodejs
 
 # Ollama (LLM locale)
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5-coder:7b
+ollama pull qwen3.5:9b-q4_K_M
 ```
 
 ## 2. Utente di sistema
@@ -264,13 +266,14 @@ sezione: MLX non è disponibile, usa solo Ollama.
 brew install pipx
 pipx ensurepath
 
-# Installa il server MLX e scarica un modello iniziale
-scripts/install-mlx-server.sh mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
+# Installa il server MLX e carica il modello Qwen 3.5 equivalente
+scripts/install-mlx-server.sh mlx-community/Qwen3.5-9B-MLX-4bit
 ```
 
 Lo script:
-1. installa `mlx-lm` via pipx,
-2. pre-scarica il modello indicato da Hugging Face,
+1. installa `mlx-vlm` via pipx,
+2. avvia il server con il modello indicato (scaricato da Hugging Face al
+   primo avvio),
 3. genera un plist launchd a partire dal template
    `deploy/dev.aplos.mlx.plist` e lo registra come agente utente,
 4. attende che `http://127.0.0.1:8080/v1/models` risponda.

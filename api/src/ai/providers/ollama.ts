@@ -5,6 +5,12 @@
  * indefinito, eliminando i cold start tra una query e l'altra (default Ollama:
  * 5 min). NB: dev'essere un numero — Ollama parsa la stringa come Go duration
  * e rifiuta "-1" perché manca l'unità di tempo.
+ *
+ * Qwen 3.5 abilita il reasoning per default. Aplo's richiede output molto
+ * vincolati (classificazione di una parola e SQL senza spiegazioni), quindi
+ * inviamo `think: false` in ogni richiesta. Il reasoning resta separato dal
+ * contenuto nell'API Ollama, ma consumerebbe il piccolo budget del classifier
+ * prima che il modello possa emettere DATI/INFO.
  */
 
 import type { LlmMessage, LlmChatOptions, LlmProvider } from './types.js';
@@ -39,6 +45,7 @@ export function makeOllamaProvider(cfg: OllamaConfig): LlmProvider {
           model: cfg.model,
           messages,
           stream: false,
+          think: false,
           keep_alive: -1,
           options: buildOptions(opts),
         }),
@@ -61,6 +68,7 @@ export function makeOllamaProvider(cfg: OllamaConfig): LlmProvider {
           model: cfg.model,
           messages,
           stream: true,
+          think: false,
           keep_alive: -1,
           options: buildOptions(opts),
         }),
@@ -105,6 +113,7 @@ export function makeOllamaProvider(cfg: OllamaConfig): LlmProvider {
           model: cfg.model,
           messages: [{ role: 'user', content: 'ok' }],
           stream: false,
+          think: false,
           keep_alive: -1,
           options: { num_predict: 1 },
         }),

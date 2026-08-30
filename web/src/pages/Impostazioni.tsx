@@ -33,18 +33,17 @@ interface AiTestResult {
  */
 const MODEL_SUGGESTIONS: Record<AiProvider, string[]> = {
   ollama: [
+    'qwen3.5:9b-q4_K_M',
+    'qwen3:14b',
+    'deepseek-r1:14b',
     'qwen2.5-coder:7b',
-    'qwen2.5-coder:3b',
-    'qwen2.5:7b',
-    'llama3.2:3b',
-    'llama3.1:8b',
+    'qwen3:8b',
   ],
   mlx: [
+    'mlx-community/Qwen3.5-9B-MLX-4bit',
+    'mlx-community/Qwen3.5-9B-OptiQ-4bit',
     'mlx-community/Qwen2.5-Coder-7B-Instruct-4bit',
-    'mlx-community/Qwen2.5-Coder-3B-Instruct-4bit',
-    'mlx-community/Qwen2.5-7B-Instruct-4bit',
-    'mlx-community/Llama-3.2-3B-Instruct-4bit',
-    'mlx-community/Llama-3.2-1B-Instruct-4bit',
+    'mlx-community/Qwen3.5-4B-MLX-4bit',
   ],
 };
 
@@ -223,8 +222,8 @@ export function ImpostazioniPage() {
                   value={form.ai_model}
                   onChange={(e) => update('ai_model', e.target.value)}
                   placeholder={form.ai_provider === 'mlx'
-                    ? 'mlx-community/Qwen2.5-Coder-7B-Instruct-4bit'
-                    : 'qwen2.5-coder:7b'}
+                    ? 'mlx-community/Qwen3.5-9B-MLX-4bit'
+                    : 'qwen3.5:9b-q4_K_M'}
                 />
                 <datalist id="ai-model-suggestions">
                   {MODEL_SUGGESTIONS[form.ai_provider].map((m) => (
@@ -295,15 +294,15 @@ export function ImpostazioniPage() {
             <header className="card-header"><h2>Quando usare cosa</h2></header>
             <ul>
               <li>
-                <strong>Ollama</strong> — più semplice da installare (un binario,
-                gestione modelli con <code>ollama pull</code>). Buon default
-                generale, usa Metal su Apple Silicon ma con un layer Go.
+                <strong>Ollama</strong> — provider predefinito e multipiattaforma.
+                Su Windows usa direttamente le GPU NVIDIA; il modello consigliato
+                è <code>qwen3.5:9b-q4_K_M</code>.
               </li>
               <li>
                 <strong>MLX</strong> — runtime nativo Apple per Apple Silicon.
                 Su M-series tende ad essere più rapido per token, soprattutto su
                 quantizzazioni 4bit. Usa Hugging Face IDs (es.{' '}
-                <code>mlx-community/Qwen2.5-Coder-7B-Instruct-4bit</code>).
+                <code>mlx-community/Qwen3.5-9B-MLX-4bit</code>).
               </li>
             </ul>
           </section>

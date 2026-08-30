@@ -217,9 +217,10 @@ Lo schema di deploy proposto per la macchina dedicata in laboratorio:
    ALTER DEFAULT PRIVILEGES IN SCHEMA public
      GRANT SELECT ON TABLES TO aplos_readonly;
    ```
-2. **Ollama** sulla stessa macchina (o su nodo separato in LAN). `ollama pull
-   llama3.1:8b` (o il modello scelto). Configurare `OLLAMA_URL` e
-   `OLLAMA_MODEL` nelle env.
+2. **Provider AI locale** sulla stessa macchina (o su nodo separato in LAN):
+   Ollama su Windows/Linux/macOS con `ollama pull qwen3.5:9b-q4_K_M`, oppure
+   MLX su Apple Silicon con `mlx-community/Qwen3.5-9B-MLX-4bit`. Provider,
+   modello e URL sono configurabili dal pannello admin **Impostazioni**.
 3. **API**: `npm run build` produce `api/dist/`. Avvio con
    `node --env-file=.env api/dist/server.js`. Tipicamente con un'unit systemd:
    ```ini

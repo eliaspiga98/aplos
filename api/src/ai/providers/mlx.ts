@@ -1,12 +1,12 @@
 /**
- * Provider MLX: parla con `mlx_lm.server` via API OpenAI-compatible
+ * Provider MLX: parla con `mlx_vlm.server` via API OpenAI-compatible
  * (/v1/chat/completions). MLX gira nativamente su Apple Silicon usando
  * Metal — niente GPU virtualizzata, niente CUDA stub.
  *
  * Note differenze rispetto a Ollama:
  * - Streaming è SSE ("data: {json}\n\n"), non NDJSON.
  * - Il modello è specificato come Hugging Face id (es.
- *   "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"). Se non corrisponde
+ *   "mlx-community/Qwen3.5-9B-MLX-4bit"). Se non corrisponde
  *   al modello caricato all'avvio, il server lo scarica e ricarica
  *   on-demand — la prima chiamata può quindi essere lenta.
  * - Niente concetto di keep_alive: il modello resta caricato per la vita
@@ -35,11 +35,14 @@ function buildBody(cfg: MlxConfig, messages: LlmMessage[], opts: LlmChatOptions,
     messages,
     stream,
     temperature: opts.temperature ?? 0.1,
+    // Qwen 3.5 abilita il thinking per default. Le risposte strutturate di
+    // Aplo's devono invece contenere subito DATI/INFO o la query SQL.
+    enable_thinking: false,
     ...(opts.numPredict !== undefined ? { max_tokens: opts.numPredict } : {}),
   };
 }
 
-// mlx_lm.server NON filtra i token di stop del chat template (es. `<|im_end|>`
+// Alcuni server MLX non filtrano i token di stop del chat template (es. `<|im_end|>`
 // per Qwen, `<|eot_id|>` per Llama 3): finiscono dentro `delta.content` e
 // `message.content`. Li rimuoviamo qui in entrata, così il resto della
 // pipeline vede solo testo "pulito" come quello di Ollama.
@@ -141,7 +144,7 @@ export function makeMlxProvider(cfg: MlxConfig): LlmProvider {
 
     async warmup(): Promise<void> {
       // Forza il caricamento del modello con una richiesta minima.
-      // mlx_lm.server scarica il modello da Hugging Face al primo uso
+      // mlx_vlm.server scarica il modello da Hugging Face al primo uso
       // se non già presente — quindi questa chiamata può essere lenta
       // la primissima volta.
       await fetch(`${cfg.url}/v1/chat/completions`, {
@@ -153,7 +156,7 @@ export function makeMlxProvider(cfg: MlxConfig): LlmProvider {
 
     async healthCheck(): Promise<{ ready: boolean; installed: string[]; error?: string }> {
       try {
-        // mlx_lm.server espone /v1/models con i modelli noti localmente.
+        // mlx_vlm.server espone /v1/models con i modelli noti localmente.
         const res = await fetch(`${cfg.url}/v1/models`);
         if (!res.ok) return { ready: false, installed: [], error: `HTTP ${res.status}` };
         const data = (await res.json()) as { data?: Array<{ id: string }> };

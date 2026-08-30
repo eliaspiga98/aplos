@@ -40,6 +40,7 @@ type ChatStreamEvent =
 
 interface AiHealth {
   status: 'ok' | 'model_not_installed' | 'error';
+  provider?: 'ollama' | 'mlx';
   model?: string;
   installed?: string[];
   error?: string;
@@ -597,7 +598,9 @@ export function AiWidget() {
               {health.status === 'model_not_installed' && (
                 <>Il modello <code>{health.model}</code> non è installato.</>
               )}
-              {health.status === 'error' && <>Ollama non raggiungibile.</>}
+              {health.status === 'error' && (
+                <>{health.provider === 'mlx' ? 'Server MLX' : 'Ollama'} non raggiungibile.</>
+              )}
             </div>
           )}
 
