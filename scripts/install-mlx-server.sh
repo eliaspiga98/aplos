@@ -54,6 +54,9 @@ command -v pipx >/dev/null || brew install pipx
 
 echo "==> Installo mlx-vlm via pipx (idempotente)"
 pipx install mlx-vlm >/dev/null 2>&1 || pipx upgrade mlx-vlm >/dev/null
+# mlx-vlm non dichiara jinja2 in tutte le versioni, ma il chat template di
+# Qwen lo richiede esplicitamente.
+pipx inject mlx-vlm jinja2 >/dev/null
 
 MLX_BIN="$(command -v mlx_vlm.server || echo "$HOME/.local/bin/mlx_vlm.server")"
 [[ -x "$MLX_BIN" ]] || { echo "mlx_vlm.server non trovato dopo l'installazione"; exit 1; }
