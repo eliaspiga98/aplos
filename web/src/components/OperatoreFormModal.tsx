@@ -18,6 +18,7 @@ const initial = {
   ruolo: 'tecnico' as 'admin' | 'tecnico',
   pin: '',
   usa_demo: false,
+  lingua: 'it' as 'it' | 'en',
 };
 
 export function OperatoreFormModal({ open, onClose, onSaved, operatore }: Props) {
@@ -37,6 +38,7 @@ export function OperatoreFormModal({ open, onClose, onSaved, operatore }: Props)
         ruolo: operatore.ruolo,
         pin: '',
         usa_demo: operatore.usa_demo,
+        lingua: operatore.lingua,
       });
     } else {
       setForm(initial);
@@ -54,6 +56,7 @@ export function OperatoreFormModal({ open, onClose, onSaved, operatore }: Props)
           nome: form.nome.trim(),
           ruolo: form.ruolo,
           usa_demo: form.usa_demo,
+          lingua: form.lingua,
         };
         if (form.pin) payload.pin = form.pin;
         await api.patch<Operatore>(`/api/operatori/${operatore.id}`, payload);
@@ -69,6 +72,7 @@ export function OperatoreFormModal({ open, onClose, onSaved, operatore }: Props)
           ruolo: form.ruolo,
           pin: form.pin,
           usa_demo: form.usa_demo,
+          lingua: form.lingua,
         });
         push(`Operatore "${form.nome}" creato`, 'success');
       }
@@ -137,6 +141,16 @@ export function OperatoreFormModal({ open, onClose, onSaved, operatore }: Props)
           >
             <option value="tecnico">{RUOLO_LABEL.tecnico}</option>
             <option value="admin">{RUOLO_LABEL.admin}</option>
+          </select>
+        </label>
+        <label>
+          Lingua
+          <select
+            value={form.lingua}
+            onChange={(e) => setForm({ ...form, lingua: e.target.value as 'it' | 'en' })}
+          >
+            <option value="it">Italiano</option>
+            <option value="en">Inglese</option>
           </select>
         </label>
         <label>

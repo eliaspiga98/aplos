@@ -13,7 +13,7 @@ if (Request-AplosElevation $PSCommandPath $forwardArguments) { exit }
 Initialize-AplosDirectories
 Update-AplosPath
 
-$envFile = Join-Path $script:AplosRoot ".env"
+$envFile = Get-AplosEnvFile
 $networkConfigurationChanged = $false
 if (Test-Path $envFile) {
   $hostChanged = Set-AplosEnvValue $envFile "API_HOST" "0.0.0.0"
@@ -92,7 +92,7 @@ if (-not (Test-Path $apiBuild) -or -not (Test-Path $webBuild) -or ($currentRevis
 Write-Host "==> Aggiornamento del database"
 Push-Location $script:AplosRoot
 try {
-  Invoke-AplosNative $npm @("run", "migrate")
+  Invoke-AplosDatabaseScript "migrate" $envFile
 } finally {
   Pop-Location
 }
@@ -100,7 +100,9 @@ try {
 Write-Host "==> Avvio di Aplo's"
 $apiOut = Join-Path $script:AplosLogs "aplos-out.log"
 $apiErr = Join-Path $script:AplosLogs "aplos-error.log"
-$apiProcess = Start-Process -FilePath $node -ArgumentList @("--env-file=.env", "api/dist/server.js") -WorkingDirectory $script:AplosRoot -WindowStyle Hidden -RedirectStandardOutput $apiOut -RedirectStandardError $apiErr -PassThru
+$env:APLOS_CONFIG_FILE = $envFile
+$env:APLOS_CONFIG_POINTER = $script:AplosConfigPointer
+$apiProcess = Start-Process -FilePath $node -ArgumentList @("--env-file=`"$envFile`"", "api/dist/server.js") -WorkingDirectory $script:AplosRoot -WindowStyle Hidden -RedirectStandardOutput $apiOut -RedirectStandardError $apiErr -PassThru
 Set-Content -Path (Join-Path $script:AplosRuntime "api.pid") -Value $apiProcess.Id -Encoding ASCII
 
 if (-not (Wait-AplosHttp "$script:AplosUrl/api/health" 45)) {

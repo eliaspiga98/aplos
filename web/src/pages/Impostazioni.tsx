@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import { useAuth } from '../auth';
+import { useI18n, type Language } from '../i18n';
 
 type AiProvider = 'ollama' | 'mlx';
 
@@ -48,12 +49,25 @@ interface DatabaseSettings {
     backup_last_error: string | null;
     backup_running: boolean;
   };
+  storage: {
+    config_directory: string;
+    config_directory_resolved: string;
+    config_file: string;
+    uploads_directory: string;
+    uploads_directory_resolved: string;
+    restart_required_for_config: boolean;
+  };
 }
 
 interface BackupForm {
   backup_directory: string;
   backup_schedule: BackupSchedule;
   backup_retention_count: number;
+}
+
+interface StorageForm {
+  config_directory: string;
+  uploads_directory: string;
 }
 
 function formatBytes(value: number | null): string {
@@ -87,6 +101,7 @@ const MODEL_SUGGESTIONS: Record<AiProvider, string[]> = {
 
 export function ImpostazioniPage() {
   const { user } = useAuth();
+  const { language, setLanguage, t, locale } = useI18n();
   const [form, setForm] = useState<AiSettings | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<AiSettings | null>(null);
   const [health, setHealth] = useState<AiHealth | null>(null);
@@ -102,10 +117,19 @@ export function ImpostazioniPage() {
   const [backupSaving, setBackupSaving] = useState(false);
   const [backupRunning, setBackupRunning] = useState(false);
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
+  const [storageForm, setStorageForm] = useState<StorageForm | null>(null);
+  const [storageSnapshot, setStorageSnapshot] = useState<StorageForm | null>(null);
+  const [storageSaving, setStorageSaving] = useState(false);
+  const [storageMessage, setStorageMessage] = useState<string | null>(null);
+  const [languageSaving, setLanguageSaving] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
+    if (user?.ruolo !== 'admin') {
+      setLoading(false);
+      return;
+    }
     try {
       const [s, h, database] = await Promise.all([
         api.get<AiSettings>('/api/admin/settings/ai'),
@@ -125,23 +149,20 @@ export function ImpostazioniPage() {
       };
       setBackupForm(nextBackup);
       setBackupSnapshot(nextBackup);
+      const nextStorage: StorageForm = {
+        config_directory: database.storage.config_directory,
+        uploads_directory: database.storage.uploads_directory,
+      };
+      setStorageForm(nextStorage);
+      setStorageSnapshot(nextStorage);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Errore di rete');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.ruolo]);
 
   useEffect(() => { void loadAll(); }, [loadAll]);
-
-  if (user?.ruolo !== 'admin') {
-    return (
-      <div className="page">
-        <h1>Impostazioni</h1>
-        <p className="muted">Pagina riservata agli amministratori.</p>
-      </div>
-    );
-  }
 
   function update<K extends keyof AiSettings>(key: K, value: AiSettings[K]) {
     setSavedMsg(null);
@@ -251,6 +272,42 @@ export function ImpostazioniPage() {
     }
   }
 
+  async function onStorageSave() {
+    if (!storageForm) return;
+    setStorageSaving(true);
+    setError(null);
+    setStorageMessage(null);
+    try {
+      await api.put('/api/admin/settings/storage', storageForm);
+      const database = await api.get<DatabaseSettings>('/api/admin/settings/database');
+      setDatabaseSettings(database);
+      const saved = {
+        config_directory: database.storage.config_directory,
+        uploads_directory: database.storage.uploads_directory,
+      };
+      setStorageForm(saved);
+      setStorageSnapshot(saved);
+      setStorageMessage(t('Percorsi salvati.'));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('Errore di rete'));
+    } finally {
+      setStorageSaving(false);
+    }
+  }
+
+  async function onLanguageChange(next: Language) {
+    if (next === language) return;
+    setLanguageSaving(true);
+    setError(null);
+    try {
+      await setLanguage(next);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('Errore di rete'));
+    } finally {
+      setLanguageSaving(false);
+    }
+  }
+
   const dirty = form && savedSnapshot && (
     form.ai_provider !== savedSnapshot.ai_provider ||
     form.ai_model !== savedSnapshot.ai_model ||
@@ -262,6 +319,10 @@ export function ImpostazioniPage() {
     backupForm.backup_schedule !== backupSnapshot.backup_schedule ||
     backupForm.backup_retention_count !== backupSnapshot.backup_retention_count
   );
+  const storageDirty = storageForm && storageSnapshot && (
+    storageForm.config_directory !== storageSnapshot.config_directory ||
+    storageForm.uploads_directory !== storageSnapshot.uploads_directory
+  );
 
   return (
     <div className="page">
@@ -271,6 +332,24 @@ export function ImpostazioniPage() {
 
       {loading && <p>Caricamento…</p>}
       {error && <div className="alert-error">{error}</div>}
+
+      <section className="card settings-card">
+        <header className="card-header"><h2>Preferenze personali</h2></header>
+        <div className="settings-grid">
+          <label>
+            <span>Lingua</span>
+            <select
+              value={language}
+              onChange={(event) => void onLanguageChange(event.target.value as Language)}
+              disabled={languageSaving}
+            >
+              <option value="it">Italiano</option>
+              <option value="en">Inglese</option>
+            </select>
+          </label>
+        </div>
+        <p className="muted">La lingua viene applicata all’interfaccia e alle risposte di Aplo’s buddy.</p>
+      </section>
 
       {form && (
         <>
@@ -416,6 +495,63 @@ export function ImpostazioniPage() {
                 mentre il database è in esecuzione. Usa i backup qui sotto per creare copie consistenti.
               </p>
 
+              {storageForm && (
+                <>
+                  <h3>Dati e percorsi</h3>
+                  <p className="muted">
+                    Configurazione e allegati esistenti vengono copiati automaticamente prima del cambio.
+                  </p>
+                  <div className="settings-grid">
+                    <label>
+                      <span>Cartella configurazione</span>
+                      <input
+                        type="text"
+                        value={storageForm.config_directory}
+                        onChange={(event) => {
+                          setStorageMessage(null);
+                          setStorageForm({ ...storageForm, config_directory: event.target.value });
+                        }}
+                        placeholder="C:\\ProgramData\\Aplos\\config"
+                      />
+                      <small className="muted">Percorso effettivo: {databaseSettings.storage.config_directory_resolved}</small>
+                    </label>
+                    <label>
+                      <span>Cartella allegati</span>
+                      <input
+                        type="text"
+                        value={storageForm.uploads_directory}
+                        onChange={(event) => {
+                          setStorageMessage(null);
+                          setStorageForm({ ...storageForm, uploads_directory: event.target.value });
+                        }}
+                        placeholder="C:\\ProgramData\\Aplos\\uploads"
+                      />
+                      <small className="muted">Percorso effettivo: {databaseSettings.storage.uploads_directory_resolved}</small>
+                    </label>
+                  </div>
+                  <div className="database-location" style={{ marginTop: '0.75rem' }}>
+                    <div className="database-location--wide">
+                      <span>File di configurazione attivo</span>
+                      <code>{databaseSettings.storage.config_file}</code>
+                    </div>
+                  </div>
+                  {databaseSettings.storage.restart_required_for_config && (
+                    <p className="muted">Il cambio della cartella di configurazione sarà completo al prossimo riavvio.</p>
+                  )}
+                  <div className="settings-actions">
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={!storageDirty || storageSaving}
+                      onClick={() => void onStorageSave()}
+                    >
+                      {storageSaving ? 'Salvataggio…' : 'Salva percorsi'}
+                    </button>
+                    {storageMessage && <span className="muted">{storageMessage}</span>}
+                  </div>
+                </>
+              )}
+
               <div className="settings-grid">
                 <label>
                   <span>Cartella di salvataggio sul PC server</span>
@@ -494,7 +630,7 @@ export function ImpostazioniPage() {
                   Ultimo backup:{' '}
                   <strong>
                     {databaseSettings.backup.backup_last_at
-                      ? new Date(databaseSettings.backup.backup_last_at).toLocaleString('it-IT')
+                      ? new Date(databaseSettings.backup.backup_last_at).toLocaleString(locale)
                       : 'mai eseguito'}
                   </strong>
                 </span>

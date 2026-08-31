@@ -77,7 +77,7 @@ if ($postgresService.Status -ne "Running") {
   Set-Content -Path (Join-Path $script:AplosRuntime "postgres-started-by-aplos.txt") -Value $postgresService.Name -Encoding ASCII
 }
 
-$envFile = Join-Path $script:AplosRoot ".env"
+$envFile = Get-AplosEnvFile
 if (-not (Test-Path $envFile)) {
   Write-Host ""
   Write-Host "Serve solo la password scelta durante l'installazione di PostgreSQL."
@@ -123,7 +123,8 @@ if (-not (Test-Path $envFile)) {
       Invoke-AplosNative $createdb @("-h", "127.0.0.1", "-U", "postgres", "-O", "aplos", "aplos")
     }
 
-    $rootForEnv = $script:AplosRoot.Replace("\", "/")
+    $uploadsForEnv = $script:AplosDefaultUploads.Replace("\", "/")
+    $backupsForEnv = $script:AplosDefaultBackups.Replace("\", "/")
     $environment = @"
 DATABASE_URL=postgresql://aplos:$appPassword@127.0.0.1:5432/aplos
 READONLY_DATABASE_URL=postgresql://aplos_readonly:$readonlyPassword@127.0.0.1:5432/aplos
@@ -134,7 +135,8 @@ SESSION_TTL_SECONDS=28800
 COOKIE_SECURE=false
 WEB_ORIGIN=http://127.0.0.1:3001
 VITE_API_BASE_URL=
-UPLOADS_DIR=$rootForEnv/var/uploads
+UPLOADS_DIR=$uploadsForEnv
+APLOS_DEFAULT_BACKUP_DIR=$backupsForEnv
 UPLOAD_MAX_BYTES=52428800
 NODE_ENV=production
 "@
@@ -144,10 +146,18 @@ NODE_ENV=production
     $postgresPassword = $null
   }
 } else {
-  Write-Host "==> Configurazione .env gia presente: viene conservata"
+  Write-Host "==> Configurazione persistente gia presente: viene conservata"
   $null = Set-AplosEnvValue $envFile "API_HOST" "0.0.0.0"
   $null = Set-AplosEnvValue $envFile "COOKIE_SECURE" "false"
+  $legacyUploadsForEnv = (Join-Path $script:AplosRoot "var\uploads").Replace("\", "/")
+  $currentUploads = Get-Content $envFile | Where-Object { $_ -like "UPLOADS_DIR=*" } | Select-Object -First 1
+  if (-not $currentUploads -or $currentUploads.Substring(12).Replace("\", "/") -eq $legacyUploadsForEnv) {
+    $null = Set-AplosEnvValue $envFile "UPLOADS_DIR" ($script:AplosDefaultUploads.Replace("\", "/"))
+  }
+  $null = Set-AplosEnvValue $envFile "APLOS_DEFAULT_BACKUP_DIR" ($script:AplosDefaultBackups.Replace("\", "/"))
 }
+$env:APLOS_CONFIG_FILE = $envFile
+$env:APLOS_CONFIG_POINTER = $script:AplosConfigPointer
 
 Write-Host "==> Configurazione dell'accesso dalla rete locale"
 Enable-AplosLanFirewall
@@ -157,8 +167,8 @@ Push-Location $script:AplosRoot
 try {
   Invoke-AplosNative $npm @("ci")
   Invoke-AplosNative $npm @("run", "build")
-  Invoke-AplosNative $npm @("run", "migrate")
-  Invoke-AplosNative $npm @("run", "seed")
+  Invoke-AplosDatabaseScript "migrate" $envFile
+  Invoke-AplosDatabaseScript "seed" $envFile
 } finally {
   Pop-Location
 }

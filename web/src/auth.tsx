@@ -7,6 +7,7 @@ interface AuthContextValue {
   login: (idOperatore: number, pin: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  setLanguage: (language: 'it' | 'en') => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -47,8 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const setLanguage = useCallback(async (language: 'it' | 'en') => {
+    const updated = await api.patch<User>('/api/auth/me/preferences', { lingua: language });
+    setUser(updated);
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refresh, setLanguage }}>
       {children}
     </AuthContext.Provider>
   );

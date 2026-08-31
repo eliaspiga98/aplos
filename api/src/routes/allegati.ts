@@ -4,17 +4,13 @@ import { mkdir, unlink } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { randomUUID } from 'node:crypto';
-import { extname, join, resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { extname, join } from 'node:path';
 
 import { config } from '../config.js';
 import { pool } from '../db/pool.js';
 import { logAudit } from '../audit.js';
 import { requireAuth } from '../auth/guards.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-// uploadsDir è relativo alla root del progetto (un livello sopra api/).
-const UPLOADS_ROOT = resolve(__dirname, '../../..', config.uploadsDir);
+import { getUploadsRoot } from '../storage.js';
 
 const IdLavoroParams = Type.Object({ id: Type.Integer({ minimum: 1 }) });
 const AllegatoParams = Type.Object({
@@ -59,7 +55,8 @@ export async function allegatiRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: 'Nessun file inviato' });
       }
 
-      const dir = join(UPLOADS_ROOT, String(id));
+      const uploadsRoot = await getUploadsRoot();
+      const dir = join(uploadsRoot, String(id));
       await mkdir(dir, { recursive: true });
       const ext = extname(data.filename);
       const storedName = `${randomUUID()}${ext}`;
@@ -126,7 +123,7 @@ export async function allegatiRoutes(app: FastifyInstance) {
       const row = result.rows[0];
       if (!row) return reply.code(404).send({ error: 'Allegato non trovato' });
 
-      const fullPath = join(UPLOADS_ROOT, row.storage_path);
+      const fullPath = join(await getUploadsRoot(), row.storage_path);
       reply
         .header('Content-Disposition', `attachment; filename="${row.nome_file.replace(/"/g, '')}"`)
         .type(row.mime_type ?? 'application/octet-stream');
@@ -146,7 +143,7 @@ export async function allegatiRoutes(app: FastifyInstance) {
       const row = result.rows[0];
       if (!row) return reply.code(404).send({ error: 'Allegato non trovato' });
 
-      const fullPath = join(UPLOADS_ROOT, row.storage_path);
+      const fullPath = join(await getUploadsRoot(), row.storage_path);
       try { await unlink(fullPath); } catch {
         // file già rimosso dal filesystem? log e prosegui
         req.log.warn({ fullPath }, 'file allegato già rimosso dal filesystem');

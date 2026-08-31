@@ -1,8 +1,13 @@
 Set-StrictMode -Version 2.0
 
 $script:AplosRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$script:AplosRuntime = Join-Path $script:AplosRoot "var\runtime"
-$script:AplosLogs = Join-Path $script:AplosRoot "var\logs"
+$script:AplosStateRoot = Join-Path $env:ProgramData "Aplos"
+$script:AplosRuntime = Join-Path $script:AplosStateRoot "runtime"
+$script:AplosLogs = Join-Path $script:AplosStateRoot "logs"
+$script:AplosDefaultConfigDirectory = Join-Path $script:AplosStateRoot "config"
+$script:AplosDefaultUploads = Join-Path $script:AplosStateRoot "uploads"
+$script:AplosDefaultBackups = Join-Path $script:AplosStateRoot "backups"
+$script:AplosConfigPointer = Join-Path $script:AplosStateRoot "config-location.txt"
 $script:AplosUrl = "http://127.0.0.1:3001"
 $script:OllamaUrl = "http://127.0.0.1:11434"
 $script:AplosModel = "qwen3.5:9b-q4_K_M"
@@ -35,9 +40,65 @@ function Request-AplosElevation([string]$ScriptPath, [string[]]$Arguments = @())
 }
 
 function Initialize-AplosDirectories {
+  New-Item -ItemType Directory -Force -Path $script:AplosStateRoot | Out-Null
   New-Item -ItemType Directory -Force -Path $script:AplosRuntime | Out-Null
   New-Item -ItemType Directory -Force -Path $script:AplosLogs | Out-Null
-  New-Item -ItemType Directory -Force -Path (Join-Path $script:AplosRoot "var\uploads") | Out-Null
+  New-Item -ItemType Directory -Force -Path $script:AplosDefaultConfigDirectory | Out-Null
+  New-Item -ItemType Directory -Force -Path $script:AplosDefaultUploads | Out-Null
+  New-Item -ItemType Directory -Force -Path $script:AplosDefaultBackups | Out-Null
+
+  # Migrazione trasparente dalle vecchie versioni, nelle quali configurazione
+  # e allegati vivevano dentro il repository. Copiamo (non cancelliamo) per
+  # mantenere l'operazione recuperabile.
+  $legacyEnv = Join-Path $script:AplosRoot ".env"
+  $defaultEnv = Join-Path $script:AplosDefaultConfigDirectory ".env"
+  $migrationMarker = Join-Path $script:AplosStateRoot "legacy-storage-migrated.txt"
+  if ((Test-Path $legacyEnv) -and -not (Test-Path $defaultEnv) -and -not (Test-Path $script:AplosConfigPointer)) {
+    Copy-Item -LiteralPath $legacyEnv -Destination $defaultEnv
+  }
+  $legacyUploads = Join-Path $script:AplosRoot "var\uploads"
+  if ((Test-Path $legacyUploads) -and -not (Test-Path $migrationMarker)) {
+    Get-ChildItem -LiteralPath $legacyUploads -Force -ErrorAction SilentlyContinue |
+      Copy-Item -Destination $script:AplosDefaultUploads -Recurse -Force -ErrorAction Stop
+    Set-Content -Path $migrationMarker -Value (Get-Date -Format "o") -Encoding ASCII
+  }
+  $legacyBackups = Join-Path $script:AplosRoot "var\backups"
+  $backupMigrationMarker = Join-Path $script:AplosStateRoot "legacy-backups-migrated.txt"
+  if ((Test-Path $legacyBackups) -and -not (Test-Path $backupMigrationMarker)) {
+    Get-ChildItem -LiteralPath $legacyBackups -Force -ErrorAction SilentlyContinue |
+      Copy-Item -Destination $script:AplosDefaultBackups -Recurse -Force -ErrorAction Stop
+    Set-Content -Path $backupMigrationMarker -Value (Get-Date -Format "o") -Encoding ASCII
+  }
+
+  # Anche un semplice "Avvia" dopo l'aggiornamento deve usare le nuove
+  # cartelle persistenti, senza obbligare l'utente a rilanciare l'installer.
+  if ((Test-Path $defaultEnv) -and -not (Test-Path $script:AplosConfigPointer)) {
+    $legacyUploadsForEnv = $legacyUploads.Replace("\", "/")
+    $configuredUploads = Get-Content $defaultEnv | Where-Object { $_ -like "UPLOADS_DIR=*" } | Select-Object -First 1
+    if (-not $configuredUploads -or $configuredUploads.Substring(12).Replace("\", "/") -eq $legacyUploadsForEnv) {
+      $null = Set-AplosEnvValue $defaultEnv "UPLOADS_DIR" ($script:AplosDefaultUploads.Replace("\", "/"))
+    }
+    $null = Set-AplosEnvValue $defaultEnv "APLOS_DEFAULT_BACKUP_DIR" ($script:AplosDefaultBackups.Replace("\", "/"))
+  }
+}
+
+function Get-AplosEnvFile {
+  if (Test-Path $script:AplosConfigPointer) {
+    $pointed = (Get-Content $script:AplosConfigPointer -Raw).Trim()
+    if ($pointed -and (Test-Path $pointed)) { return $pointed }
+  }
+  return (Join-Path $script:AplosDefaultConfigDirectory ".env")
+}
+
+function Invoke-AplosDatabaseScript([string]$ScriptName, [string]$EnvFile) {
+  $tsx = Join-Path $script:AplosRoot "node_modules\.bin\tsx.cmd"
+  if (-not (Test-Path $tsx)) { throw "Runtime TypeScript non trovato. Esegui npm ci." }
+  $target = switch ($ScriptName) {
+    "migrate" { "api/src/db/migrate.ts" }
+    "seed" { "api/src/db/seed.ts" }
+    default { throw "Script database non supportato: $ScriptName" }
+  }
+  Invoke-AplosNative $tsx @("--env-file=$EnvFile", $target)
 }
 
 function Set-AplosEnvValue([string]$Path, [string]$Key, [string]$Value) {

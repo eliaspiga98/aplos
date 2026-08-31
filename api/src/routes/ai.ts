@@ -14,7 +14,7 @@ const ChatBody = Type.Object({
   domanda: Type.String({ minLength: 1, maxLength: 1000 }),
 });
 
-const SQL_SYSTEM_PROMPT = `Sei un assistente che traduce domande in italiano in query SQL PostgreSQL.
+const SQL_SYSTEM_PROMPT = `Sei un assistente che traduce domande in italiano o inglese in query SQL PostgreSQL.
 ${SCHEMA_DESCRIPTION}
 
 RISPONDI SOLO con la query SQL, senza spiegazioni e senza testo aggiuntivo.
@@ -68,7 +68,7 @@ Riceverai una domanda dell'operatore con il risultato già pronto di una query
 sul database aziendale.
 
 REGOLE DI RISPOSTA — VINCOLANTI:
-- Rispondi SOLO in italiano in linguaggio naturale.
+- Rispondi nella lingua richiesta nelle istruzioni finali, usando linguaggio naturale.
 - NON generare SQL, NON usare blocchi di codice, NON menzionare la query.
 - Sii conciso (1-3 frasi al massimo).
 - Se il risultato è un conteggio, esprimilo chiaramente
@@ -115,6 +115,12 @@ const CLASSIFIER_FEW_SHOT: Array<{ role: 'user' | 'assistant'; content: string }
   { role: 'assistant', content: 'DATI' },
   { role: 'user', content: 'Quanti lavori ci sono?' },
   { role: 'assistant', content: 'DATI' },
+  { role: 'user', content: 'How do I create a new doctor?' },
+  { role: 'assistant', content: 'INFO' },
+  { role: 'user', content: 'Show me jobs due this week' },
+  { role: 'assistant', content: 'DATI' },
+  { role: 'user', content: 'What is the phone number of Dr Smith?' },
+  { role: 'assistant', content: 'DATI' },
 ];
 
 const INFO_SYSTEM_PROMPT = `Sei "Aplo's buddy", l'assistente conversazionale del
@@ -160,6 +166,16 @@ COME OPERARE:
 Se l'utente ti chiede dati specifici dal database (es. "quanti X", "mostra Y"),
 suggerisci di riformulare la domanda in modo che possa eseguire una ricerca.`;
 
+function languageInstruction(english: boolean): string {
+  return english
+    ? 'IMPORTANT: Reply only in English. The user interface and the operator preference are English.'
+    : 'IMPORTANTE: Rispondi esclusivamente in italiano. La preferenza dell’operatore è italiano.';
+}
+
+function localized(english: boolean, italian: string, englishText: string): string {
+  return english ? englishText : italian;
+}
+
 const RESULT_ROW_LIMIT = 100;
 
 /**
@@ -177,8 +193,8 @@ function looksLikeCodeOnly(text: string): boolean {
   return codeLike > t.length * 0.15;
 }
 
-function deterministicSummary(rows: Record<string, unknown>[], totalRows: number): string {
-  if (totalRows === 0) return 'Nessun risultato.';
+function deterministicSummary(rows: Record<string, unknown>[], totalRows: number, english: boolean): string {
+  if (totalRows === 0) return localized(english, 'Nessun risultato.', 'No results.');
   // count(*) o aggregato singolo: SELECT COUNT(*) ritorna [{count: '3'}]
   if (rows.length === 1) {
     const only = rows[0]!;
@@ -186,13 +202,15 @@ function deterministicSummary(rows: Record<string, unknown>[], totalRows: number
     if (keys.length === 1) {
       const v = only[keys[0]!];
       if (typeof v === 'number' || typeof v === 'string') {
-        return `Risultato: ${v}.`;
+        return localized(english, `Risultato: ${v}.`, `Result: ${v}.`);
       }
     }
   }
   const sample = rows.slice(0, 5).map((r, i) => `${i + 1}. ${JSON.stringify(r)}`).join('\n');
-  const more = totalRows > rows.length ? `\n…e altre ${totalRows - rows.length} righe.` : '';
-  return `Trovate ${totalRows} righe:\n${sample}${more}`;
+  const more = totalRows > rows.length
+    ? localized(english, `\n…e altre ${totalRows - rows.length} righe.`, `\n…and ${totalRows - rows.length} more rows.`)
+    : '';
+  return localized(english, `Trovate ${totalRows} righe:\n${sample}${more}`, `Found ${totalRows} rows:\n${sample}${more}`);
 }
 
 export async function aiRoutes(app: FastifyInstance) {
@@ -218,6 +236,7 @@ export async function aiRoutes(app: FastifyInstance) {
 
   app.post('/chat', { schema: { body: ChatBody } }, async (req, reply) => {
     const { domanda } = req.body as { domanda: string };
+    const english = req.user?.lingua === 'en';
 
     // Streaming NDJSON: il client legge il body in chunk e mostra
     // progressivamente fasi, query, dati e risposta finale.
@@ -270,7 +289,7 @@ export async function aiRoutes(app: FastifyInstance) {
       let buffer = '';
       try {
         for await (const chunk of llmChatStream([
-          { role: 'system', content: INFO_SYSTEM_PROMPT },
+          { role: 'system', content: `${INFO_SYSTEM_PROMPT}\n\n${languageInstruction(english)}` },
           { role: 'user', content: domanda },
         ])) {
           buffer += chunk;
@@ -278,7 +297,7 @@ export async function aiRoutes(app: FastifyInstance) {
         }
       } catch (err) {
         req.log.error({ err }, 'LLM irraggiungibile (info)');
-        send({ type: 'error', error: 'Assistente AI non disponibile' });
+        send({ type: 'error', error: localized(english, 'Assistente AI non disponibile', 'AI assistant unavailable') });
         finish();
         return reply;
       }
@@ -303,6 +322,33 @@ export async function aiRoutes(app: FastifyInstance) {
     // bias forte verso COUNT(*) per le domande "quanti …". Mostriamo turni
     // utente/assistente espliciti per fissare il formato atteso.
     const FEW_SHOT: Array<{ role: 'user' | 'assistant'; content: string }> = [
+      {
+        role: 'user',
+        content: 'Show me jobs due in the next 5 days',
+      },
+      {
+        role: 'assistant',
+        content:
+          '```sql\n' +
+          'SELECT l.id, l.nome_paziente, l.data_consegna, l.stato, d.nome AS dottore_nome\n' +
+          'FROM lavori l JOIN dottori d ON d.id = l.id_dottore\n' +
+          "WHERE l.deleted_at IS NULL AND l.stato <> 'finito'\n" +
+          "  AND l.data_consegna BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '5 days'\n" +
+          'ORDER BY l.data_consegna ASC LIMIT 100\n```',
+      },
+      {
+        role: 'user',
+        content: 'Materials below threshold',
+      },
+      {
+        role: 'assistant',
+        content:
+          '```sql\n' +
+          'SELECT id, categoria, marca, colore, lotto, quantita, unita_misura, soglia_alert\n' +
+          'FROM materiali WHERE deleted_at IS NULL AND soglia_alert IS NOT NULL\n' +
+          '  AND COALESCE(quantita, 0) <= soglia_alert\n' +
+          'ORDER BY categoria, lotto LIMIT 100\n```',
+      },
       {
         role: 'user',
         content: 'Quanti lavori sono in corso?',
@@ -413,7 +459,7 @@ export async function aiRoutes(app: FastifyInstance) {
       ]);
     } catch (err) {
       req.log.error({ err }, 'LLM irraggiungibile');
-      send({ type: 'error', error: 'Assistente AI non disponibile' });
+      send({ type: 'error', error: localized(english, 'Assistente AI non disponibile', 'AI assistant unavailable') });
       finish();
       return reply;
     }
@@ -422,7 +468,11 @@ export async function aiRoutes(app: FastifyInstance) {
     if (!guard.ok || !guard.sql) {
       send({
         type: 'error',
-        error: `Query non valida: ${guard.reason ?? 'sconosciuto'}`,
+        error: localized(
+          english,
+          `Query non valida: ${guard.reason ?? 'sconosciuto'}`,
+          `Invalid query: ${guard.reason ?? 'unknown reason'}`,
+        ),
         sql_raw: rawSql,
       });
       finish();
@@ -499,7 +549,7 @@ export async function aiRoutes(app: FastifyInstance) {
         if (attempt === MAX_ATTEMPTS) {
           send({
             type: 'error',
-            error: "Errore nell'esecuzione della query",
+            error: localized(english, "Errore nell'esecuzione della query", 'Error while running the query'),
             details: r.message,
             sql: currentSql,
           });
@@ -559,7 +609,7 @@ export async function aiRoutes(app: FastifyInstance) {
     let streamingFailed = false;
     try {
       for await (const chunk of llmChatStream([
-        { role: 'system', content: ANSWER_SYSTEM_PROMPT },
+        { role: 'system', content: `${ANSWER_SYSTEM_PROMPT}\n\n${languageInstruction(english)}` },
         {
           role: 'user',
           content:
@@ -567,8 +617,8 @@ export async function aiRoutes(app: FastifyInstance) {
             `Risultato della query (${resultRowCount} righe totali, ` +
             `${resultRows.length} mostrate):\n` +
             JSON.stringify(resultRows, null, 2) +
-            `\n\nFormula la risposta in italiano per l'operatore. ` +
-            `Non includere codice SQL.`,
+            `\n\n${english ? 'Write the answer in English for the operator.' : "Formula la risposta in italiano per l'operatore."} ` +
+            `${english ? 'Do not include SQL code.' : 'Non includere codice SQL.'}`,
         },
       ])) {
         answer += chunk;
@@ -585,7 +635,7 @@ export async function aiRoutes(app: FastifyInstance) {
     // canonica (evento 'replace_answer').
     let finalAnswer = answer.trim();
     if (streamingFailed || looksLikeCodeOnly(answer)) {
-      finalAnswer = deterministicSummary(resultRows, resultRowCount);
+      finalAnswer = deterministicSummary(resultRows, resultRowCount, english);
       send({ type: 'replace_answer', text: finalAnswer });
     }
 

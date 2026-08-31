@@ -26,6 +26,9 @@ export const config = {
   cookieSecure: optional('COOKIE_SECURE', isProduction ? 'true' : 'false') === 'true',
   webOrigin: optional('WEB_ORIGIN', 'http://localhost:5173'),
   uploadsDir: optional('UPLOADS_DIR', 'var/uploads'),
+  defaultBackupDir: optional('APLOS_DEFAULT_BACKUP_DIR', 'var/backups'),
+  configFile: optional('APLOS_CONFIG_FILE', '.env'),
+  configPointer: optional('APLOS_CONFIG_POINTER', 'var/runtime/config-location.txt'),
   uploadMaxBytes: Number(optional('UPLOAD_MAX_BYTES', String(50 * 1024 * 1024))),
   pgDumpPath: optional('PG_DUMP_PATH', 'pg_dump'),
   // Provider AI e modello sono gestiti a runtime nella tabella `app_settings`

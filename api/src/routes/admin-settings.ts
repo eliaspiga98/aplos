@@ -18,6 +18,7 @@ import {
   getDatabaseLocation,
   runDatabaseBackup,
 } from '../db/backup.js';
+import { getStorageStatus, updateStorageSettings } from '../storage.js';
 
 const AiSettingsBody = Type.Object({
   ai_provider: Type.Union([Type.Literal('ollama'), Type.Literal('mlx')]),
@@ -34,6 +35,11 @@ const BackupSettingsBody = Type.Object({
     Type.Literal('weekly'),
   ]),
   backup_retention_count: Type.Integer({ minimum: 1, maximum: 365 }),
+});
+
+const StorageSettingsBody = Type.Object({
+  config_directory: Type.String({ minLength: 1, maxLength: 1000 }),
+  uploads_directory: Type.String({ minLength: 1, maxLength: 1000 }),
 });
 
 /**
@@ -124,11 +130,33 @@ export async function adminSettingsRoutes(app: FastifyInstance) {
   });
 
   app.get('/database', async () => {
-    const [database, backup] = await Promise.all([
+    const [database, backup, storage] = await Promise.all([
       getDatabaseLocation(),
       getBackupStatus(),
+      getStorageStatus(),
     ]);
-    return { database, backup };
+    return { database, backup, storage };
+  });
+
+  app.put('/storage', { schema: { body: StorageSettingsBody } }, async (req, reply) => {
+    const body = req.body as { config_directory: string; uploads_directory: string };
+    try {
+      const status = await updateStorageSettings(body.config_directory, body.uploads_directory);
+      await logAudit(pool, {
+        idOperatore: req.user!.id,
+        azione: 'STORAGE_SETTINGS_UPDATE',
+        entita: 'app_settings',
+        dettagli: {
+          config_directory: status.config_directory_resolved,
+          uploads_directory: status.uploads_directory_resolved,
+        },
+      });
+      return status;
+    } catch (error) {
+      return reply.code(400).send({
+        error: `Impossibile applicare i percorsi: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   });
 
   app.put('/database/backup', { schema: { body: BackupSettingsBody } }, async (req, reply) => {

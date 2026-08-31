@@ -1,6 +1,7 @@
 import type pg from 'pg';
 
 export type Ruolo = 'admin' | 'tecnico';
+export type Lingua = 'it' | 'en';
 
 export interface SessionUser {
   id: number;
@@ -8,6 +9,7 @@ export interface SessionUser {
   ruolo: Ruolo;
   /** L'operatore vede il DB demo invece di quello principale. */
   usa_demo: boolean;
+  lingua: Lingua;
 }
 
 declare module 'fastify' {

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { Type } from '@sinclair/typebox';
 import bcrypt from 'bcryptjs';
 
@@ -7,7 +7,7 @@ import { pool } from '../db/pool.js';
 import { logAudit } from '../audit.js';
 import { requireAuth } from '../auth/guards.js';
 import { SESSION_COOKIE } from '../server.js';
-import type { Ruolo } from '../auth/types.js';
+import type { Lingua, Ruolo, SessionUser } from '../auth/types.js';
 
 const LoginBody = Type.Object({
   id_operatore: Type.Integer({ minimum: 1 }),
@@ -20,6 +20,20 @@ interface OperatoreRow {
   ruolo: Ruolo;
   pin_hash: string;
   usa_demo: boolean;
+  lingua: Lingua;
+}
+
+const LinguaSchema = Type.Union([Type.Literal('it'), Type.Literal('en')]);
+
+async function setSession(reply: FastifyReply, user: SessionUser) {
+  const token = await reply.jwtSign(user);
+  reply.setCookie(SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: config.cookieSecure,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: config.sessionTtlSeconds,
+  });
 }
 
 export async function authRoutes(app: FastifyInstance) {
@@ -54,7 +68,7 @@ export async function authRoutes(app: FastifyInstance) {
     const { id_operatore, pin } = req.body as { id_operatore: number; pin: string };
 
     const result = await pool.query<OperatoreRow>(
-      `SELECT id, nome, ruolo, pin_hash, usa_demo
+      `SELECT id, nome, ruolo, pin_hash, usa_demo, lingua
        FROM operatori
        WHERE id = $1 AND deleted_at IS NULL`,
       [id_operatore],
@@ -69,20 +83,14 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.code(401).send({ error: 'Credenziali non valide' });
     }
 
-    const token = await reply.jwtSign({
+    const sessionUser: SessionUser = {
       id: op.id,
       nome: op.nome,
       ruolo: op.ruolo,
       usa_demo: op.usa_demo,
-    });
-
-    reply.setCookie(SESSION_COOKIE, token, {
-      httpOnly: true,
-      secure: config.cookieSecure,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: config.sessionTtlSeconds,
-    });
+      lingua: op.lingua,
+    };
+    await setSession(reply, sessionUser);
 
     await logAudit(pool, {
       idOperatore: op.id,
@@ -91,7 +99,7 @@ export async function authRoutes(app: FastifyInstance) {
       idEntita: op.id,
     });
 
-    return { id: op.id, nome: op.nome, ruolo: op.ruolo, usa_demo: op.usa_demo };
+    return sessionUser;
   });
 
   /**
@@ -120,6 +128,34 @@ export async function authRoutes(app: FastifyInstance) {
     if (!req.user) return { user: null };
     return { user: req.user };
   });
+
+  app.patch(
+    '/me/preferences',
+    {
+      preHandler: requireAuth,
+      schema: { body: Type.Object({ lingua: LinguaSchema }) },
+    },
+    async (req, reply) => {
+      const { lingua } = req.body as { lingua: Lingua };
+      const result = await pool.query<{ id: number; nome: string; ruolo: Ruolo; usa_demo: boolean; lingua: Lingua }>(
+        `UPDATE operatori SET lingua = $1
+          WHERE id = $2 AND deleted_at IS NULL
+        RETURNING id, nome, ruolo, usa_demo, lingua`,
+        [lingua, req.user!.id],
+      );
+      const user = result.rows[0];
+      if (!user) return reply.code(404).send({ error: 'Operatore non trovato' });
+      await setSession(reply, user);
+      await logAudit(pool, {
+        idOperatore: user.id,
+        azione: 'LINGUA_UTENTE_UPDATE',
+        entita: 'operatori',
+        idEntita: user.id,
+        dettagli: { lingua },
+      });
+      return user;
+    },
+  );
 
   /**
    * Cambio PIN self-service. Verifica il PIN attuale prima di consentire la

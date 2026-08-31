@@ -25,7 +25,7 @@ const navItems: NavItem[] = [
   { to: '/materiali',  label: 'Materiali',  icon: IconBox },
   { to: '/depositi',   label: 'Depositi',   icon: IconWarehouse },
   { to: '/operatori',  label: 'Operatori',  icon: IconUsers, adminOnly: true },
-  { to: '/impostazioni', label: 'Impostazioni', icon: IconSettings, adminOnly: true },
+  { to: '/impostazioni', label: 'Impostazioni', icon: IconSettings },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {

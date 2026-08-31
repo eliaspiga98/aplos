@@ -118,10 +118,15 @@ aplos/
 ├── db/migrations/             # SQL forward-only numerato (4 migrations)
 ├── deploy/                    # systemd, nginx, plist launchd, runbook
 ├── scripts/                   # backup.sh, generate-cert.sh, install-mlx-server.sh
-├── var/uploads/               # Storage allegati (gitignored)
+├── var/uploads/               # Storage allegati dev/mac (gitignored)
 ├── PROGETTO.md, specs.md      # Decisioni e specifica funzionale
 └── ARCHITETTURA.md            # Questo file
 ```
+
+Su Windows i dati mutabili non dipendono dal repository: il launcher usa
+`C:\ProgramData\Aplos` per configurazione, upload, log e runtime. I percorsi
+di configurazione e upload sono modificabili dagli amministratori; il launcher
+segue `config-location.txt` al riavvio.
 
 Monorepo npm con workspaces. `npm run dev:api` e `npm run dev:web`
 dalla root delegano ai workspace.

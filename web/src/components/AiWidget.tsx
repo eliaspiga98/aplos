@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, ApiError, streamNdjsonPost } from '../api';
 import { useAuth } from '../auth';
 import { LavoroPreviewBlock } from './LavoroPreviewBlock';
+import { useI18n } from '../i18n';
 
 interface Message {
   role: 'user' | 'ai' | 'error';
@@ -67,12 +68,20 @@ const STORAGE_CHATS = 'aplos:ai-chats';
 const STORAGE_ACTIVE = 'aplos:ai-active';
 const MAX_TABS = 8;
 
-const SUGGESTIONS = [
-  'Quanti lavori sono in corso?',
-  'Quali lavori sono in scadenza?',
-  'Materiali sotto soglia',
-  'Lavori che usano zirconio',
-];
+const SUGGESTIONS = {
+  it: [
+    'Quanti lavori sono in corso?',
+    'Quali lavori sono in scadenza?',
+    'Materiali sotto soglia',
+    'Lavori che usano zirconio',
+  ],
+  en: [
+    'How many jobs are in progress?',
+    'Which jobs are due soon?',
+    'Materials below threshold',
+    'Jobs using zirconia',
+  ],
+};
 
 const HIDDEN_COLUMNS = new Set([
   'created_at', 'updated_at', 'deleted_at',
@@ -218,6 +227,7 @@ function loadChats(): { chats: Chat[]; activeId: string } {
 export function AiWidget() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { language, t } = useI18n();
   const [open, setOpen] = useState(false);
 
   const initial = loadChats();
@@ -428,7 +438,7 @@ export function AiWidget() {
   }
 
   function clearActive() {
-    patchActive({ messages: [], input: '', title: 'Nuova' });
+    patchActive({ messages: [], input: '', title: t('Nuova', 'New') });
     inputRef.current?.focus();
   }
 
@@ -616,7 +626,7 @@ export function AiWidget() {
                   o domande generali sul software.
                 </p>
                 <div className="chat-suggestions">
-                  {SUGGESTIONS.map((s) => (
+                  {SUGGESTIONS[language].map((s) => (
                     <button
                       key={s}
                       type="button"
@@ -653,7 +663,7 @@ export function AiWidget() {
                       ) : m.phase ? (
                         <span className="chat-phase">
                           <span className="chat-thinking-inline"><span /><span /><span /></span>
-                          <em className="muted">{PHASE_LABEL[m.phase]}</em>
+                          <em className="muted">{t(PHASE_LABEL[m.phase])}</em>
                         </span>
                       ) : m.role === 'ai' && busy ? (
                         <span className="chat-thinking-inline"><span /><span /><span /></span>

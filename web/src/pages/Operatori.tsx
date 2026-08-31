@@ -46,6 +46,7 @@ export function OperatoriPage() {
             <tr>
               <th>Nome</th>
               <th>Ruolo</th>
+              <th>Lingua</th>
               <th>Account demo</th>
               <th>Creato</th>
             </tr>
@@ -57,6 +58,7 @@ export function OperatoriPage() {
                 <td>
                   <span className={`pill pill--${o.ruolo}`}>{labelRuolo(o.ruolo)}</span>
                 </td>
+                <td>{o.lingua === 'en' ? 'English' : 'Italiano'}</td>
                 <td>
                   {o.usa_demo
                     ? <span className="badge-demo">DEMO</span>
@@ -66,7 +68,7 @@ export function OperatoriPage() {
               </tr>
             ))}
             {operatori.length === 0 && (
-              <tr><td colSpan={4} className="muted">Nessun operatore</td></tr>
+              <tr><td colSpan={5} className="muted">Nessun operatore</td></tr>
             )}
           </tbody>
         </table>

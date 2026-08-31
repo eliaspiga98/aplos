@@ -5,16 +5,18 @@ import bcrypt from 'bcryptjs';
 import { pool } from '../db/pool.js';
 import { logAudit } from '../audit.js';
 import { requireAdmin } from '../auth/guards.js';
-import type { Ruolo } from '../auth/types.js';
+import type { Lingua, Ruolo } from '../auth/types.js';
 
 const RuoloSchema = Type.Union([Type.Literal('admin'), Type.Literal('tecnico')]);
 const PinSchema = Type.String({ minLength: 4, maxLength: 12, pattern: '^[0-9]+$' });
+const LinguaSchema = Type.Union([Type.Literal('it'), Type.Literal('en')]);
 
 const CreateBody = Type.Object({
   nome: Type.String({ minLength: 1, maxLength: 100 }),
   ruolo: RuoloSchema,
   pin: PinSchema,
   usa_demo: Type.Optional(Type.Boolean()),
+  lingua: Type.Optional(LinguaSchema),
 });
 
 const UpdateBody = Type.Object({
@@ -22,6 +24,7 @@ const UpdateBody = Type.Object({
   ruolo: Type.Optional(RuoloSchema),
   pin: Type.Optional(PinSchema),
   usa_demo: Type.Optional(Type.Boolean()),
+  lingua: Type.Optional(LinguaSchema),
 });
 
 const IdParams = Type.Object({ id: Type.Integer({ minimum: 1 }) });
@@ -31,6 +34,7 @@ interface OperatoreRow {
   nome: string;
   ruolo: Ruolo;
   usa_demo: boolean;
+  lingua: Lingua;
   created_at: string;
   updated_at: string;
 }
@@ -41,7 +45,7 @@ export async function operatoriRoutes(app: FastifyInstance) {
 
   app.get('/', async () => {
     const result = await pool.query<OperatoreRow>(
-      `SELECT id, nome, ruolo, usa_demo, created_at, updated_at
+      `SELECT id, nome, ruolo, usa_demo, lingua, created_at, updated_at
        FROM operatori
        WHERE deleted_at IS NULL
        ORDER BY nome ASC`,
@@ -50,16 +54,16 @@ export async function operatoriRoutes(app: FastifyInstance) {
   });
 
   app.post('/', { schema: { body: CreateBody } }, async (req, reply) => {
-    const { nome, ruolo, pin, usa_demo = false } = req.body as {
-      nome: string; ruolo: Ruolo; pin: string; usa_demo?: boolean;
+    const { nome, ruolo, pin, usa_demo = false, lingua = 'it' } = req.body as {
+      nome: string; ruolo: Ruolo; pin: string; usa_demo?: boolean; lingua?: Lingua;
     };
     const pinHash = await bcrypt.hash(pin, 10);
 
     const result = await pool.query<OperatoreRow>(
-      `INSERT INTO operatori (nome, ruolo, pin_hash, usa_demo)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, nome, ruolo, usa_demo, created_at, updated_at`,
-      [nome, ruolo, pinHash, usa_demo],
+      `INSERT INTO operatori (nome, ruolo, pin_hash, usa_demo, lingua)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, nome, ruolo, usa_demo, lingua, created_at, updated_at`,
+      [nome, ruolo, pinHash, usa_demo, lingua],
     );
 
     const created = result.rows[0]!;
@@ -79,7 +83,7 @@ export async function operatoriRoutes(app: FastifyInstance) {
     { schema: { params: IdParams, body: UpdateBody } },
     async (req, reply) => {
       const { id } = req.params as { id: number };
-      const body = req.body as { nome?: string; ruolo?: Ruolo; pin?: string; usa_demo?: boolean };
+      const body = req.body as { nome?: string; ruolo?: Ruolo; pin?: string; usa_demo?: boolean; lingua?: Lingua };
 
       const fields: string[] = [];
       const values: unknown[] = [];
@@ -102,6 +106,10 @@ export async function operatoriRoutes(app: FastifyInstance) {
         fields.push(`usa_demo = $${i++}`);
         values.push(body.usa_demo);
       }
+      if (body.lingua !== undefined) {
+        fields.push(`lingua = $${i++}`);
+        values.push(body.lingua);
+      }
       if (fields.length === 0) {
         return reply.code(400).send({ error: 'Nessun campo da aggiornare' });
       }
@@ -111,7 +119,7 @@ export async function operatoriRoutes(app: FastifyInstance) {
         `UPDATE operatori
          SET ${fields.join(', ')}
          WHERE id = $${i} AND deleted_at IS NULL
-         RETURNING id, nome, ruolo, usa_demo, created_at, updated_at`,
+         RETURNING id, nome, ruolo, usa_demo, lingua, created_at, updated_at`,
         values,
       );
       const updated = result.rows[0];

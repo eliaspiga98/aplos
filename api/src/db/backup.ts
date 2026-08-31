@@ -58,7 +58,13 @@ let backupRunning = false;
 let schedulerStarted = false;
 
 export function resolveBackupDirectory(directory: string): string {
-  const trimmed = directory.trim();
+  const requested = directory.trim();
+  // Le installazioni precedenti hanno già "var/backups" nel DB. Su Windows
+  // il launcher imposta un default persistente fuori dal repository: lo
+  // applichiamo senza richiedere una modifica manuale delle settings.
+  const trimmed = requested === 'var/backups' && config.defaultBackupDir !== 'var/backups'
+    ? config.defaultBackupDir
+    : requested;
   if (!trimmed) throw new Error('Il percorso di backup non può essere vuoto');
   return isAbsolute(trimmed) ? resolve(trimmed) : resolve(repoRoot, trimmed);
 }
@@ -84,9 +90,13 @@ async function readSettingsRow(): Promise<BackupSettingsRow> {
 
 export async function getBackupStatus(): Promise<BackupStatus> {
   const row = await readSettingsRow();
+  const effectiveDirectory = row.backup_directory === 'var/backups' && config.defaultBackupDir !== 'var/backups'
+    ? config.defaultBackupDir
+    : row.backup_directory;
   return {
     ...row,
-    backup_directory_resolved: resolveBackupDirectory(row.backup_directory),
+    backup_directory: effectiveDirectory,
+    backup_directory_resolved: resolveBackupDirectory(effectiveDirectory),
     backup_retention_count: Number(row.backup_retention_count),
     backup_last_size_bytes: row.backup_last_size_bytes == null
       ? null

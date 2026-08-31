@@ -77,8 +77,20 @@ aggiornamento Git, il primo Avvia ricompila automaticamente il software.
 
 Per una manutenzione ordinaria basta aprire il launcher e premere **Prima
 configurazione / Aggiorna**. Le configurazioni e i dati esistenti vengono
-conservati. I log diagnostici sono in `var\logs`; gli allegati in
-`var\uploads`.
+conservati anche quando la cartella del repository viene sostituita. Per
+impostazione predefinita Windows usa:
+
+```text
+C:\ProgramData\Aplos\config\.env
+C:\ProgramData\Aplos\uploads
+C:\ProgramData\Aplos\backups
+C:\ProgramData\Aplos\logs
+C:\ProgramData\Aplos\runtime
+```
+
+Al primo avvio della nuova versione, `.env` e `var\uploads` delle installazioni
+precedenti vengono copiati automaticamente in queste cartelle. La copia
+originale non viene cancellata, così la migrazione rimane recuperabile.
 
 PostgreSQL deve comunque essere incluso in un piano di backup. La comodità del
 launcher non sostituisce copie cifrate e testate dei dati sanitari.
@@ -91,7 +103,9 @@ In **Impostazioni → Database e backup** l'amministratore può:
 - indicare una cartella sul PC server, per esempio `D:\Backup\Aplos`;
 - eseguire subito un backup manuale;
 - pianificare un backup giornaliero o settimanale;
-- scegliere quante copie conservare automaticamente.
+- scegliere quante copie conservare automaticamente;
+- cambiare la cartella della configurazione e quella degli allegati; i dati
+  esistenti vengono copiati prima che il nuovo percorso entri in uso.
 
 I backup sono archivi PostgreSQL completi in formato custom (`.dump`) e si
 ripristinano con `pg_restore`. La pianificazione viene controllata mentre
@@ -99,8 +113,17 @@ Aplo's è in esecuzione; se il PC era spento alla scadenza, il backup viene
 eseguito al successivo avvio. Per maggiore resilienza scegliere un disco
 diverso da quello del database oppure una cartella sincronizzata e cifrata.
 
-Gli allegati presenti in `var\uploads` sono file esterni al database e devono
-essere inclusi separatamente nel backup del PC.
+Gli allegati presenti nella cartella configurata (per default
+`C:\ProgramData\Aplos\uploads`) sono file esterni al database e devono essere
+inclusi separatamente nel backup del PC.
+
+### Lingua per operatore
+
+Ogni operatore può scegliere **Italiano** o **English** da **Impostazioni →
+Preferenze personali**. La scelta è salvata nel profilo e si applica sia
+all'interfaccia sia alle risposte e ai suggerimenti di Aplo's buddy. Un
+amministratore può anche preimpostare la lingua quando crea o modifica un
+operatore.
 
 ## Avvio manuale da PowerShell
 

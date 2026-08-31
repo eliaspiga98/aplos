@@ -153,6 +153,7 @@ export interface User {
   nome: string;
   ruolo: 'admin' | 'tecnico';
   usa_demo?: boolean;
+  lingua: 'it' | 'en';
 }
 
 export interface Operatore {
@@ -160,6 +161,7 @@ export interface Operatore {
   nome: string;
   ruolo: 'admin' | 'tecnico';
   usa_demo: boolean;
+  lingua: 'it' | 'en';
   created_at: string;
   updated_at: string;
 }

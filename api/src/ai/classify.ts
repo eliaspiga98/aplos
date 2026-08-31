@@ -25,6 +25,9 @@ const DATI_VERB_PREFIXES = [
   'quanti', 'quante',
   'quali', 'qual',
   'chi ', // "chi è il dottore di…"
+  'show', 'show me', 'list', 'list all', 'find', 'search',
+  'give me', 'tell me', 'display', 'export', 'print',
+  'count', 'how many', 'which', 'who ',
 ];
 
 // Sostantivi del dominio: se la domanda inizia direttamente con questi
@@ -39,6 +42,9 @@ const DATI_NOUN_PREFIXES = [
   'allegati', 'allegato',
   'cialde', 'cialda',
   'lotti', 'lotto',
+  'jobs', 'job', 'orders', 'order', 'doctors', 'doctor',
+  'materials', 'material', 'storage locations', 'operators', 'operator',
+  'patients', 'patient', 'attachments', 'attachment', 'batches', 'batch',
 ];
 
 const INFO_PREFIXES = [
@@ -50,6 +56,8 @@ const INFO_PREFIXES = [
   'che cos\'è', 'cos\'è',
   'definizione di',
   'perché',
+  'what does', 'what is', 'what are', 'what do',
+  'how do i', 'how to', 'how does', 'explain', 'definition of', 'why',
 ];
 
 function startsWithAny(text: string, prefixes: string[]): boolean {
@@ -64,12 +72,17 @@ export function quickClassify(domanda: string): 'sql' | 'info' | null {
   const t = domanda.trim().toLowerCase().replace(/[?!.]+$/g, '');
   if (t.length === 0) return null;
 
-  // Domande informative — controllo prima per evitare collisioni con
-  // "come si CREA un nuovo dottore" che inizia con "come" ma è INFO.
-  if (startsWithAny(t, INFO_PREFIXES)) return 'info';
-
   if (startsWithAny(t, DATI_VERB_PREFIXES)) return 'sql';
   if (startsWithAny(t, DATI_NOUN_PREFIXES)) return 'sql';
+
+  // Domande informative. I segnali DATI vengono controllati prima perché in
+  // inglese forme come "which jobs" e "show me" sono inequivocabili.
+  if (startsWithAny(t, INFO_PREFIXES)) {
+    // "What is the phone/email of Dr Smith?" è una richiesta dati, non una
+    // domanda enciclopedica nonostante il prefisso "what is".
+    if (/^what (?:is|are)\s+(?:the\s+)?(?:phone|email|address|status|due date)\b/.test(t)) return 'sql';
+    return 'info';
+  }
 
   // Pattern "del/della/dei + nome proprio capitalizzato" → DATI
   // (es. "telefono del dottor Rossi", "lavori della dottoressa Verdi").
@@ -77,6 +90,7 @@ export function quickClassify(domanda: string): 'sql' | 'info' | null {
   if (/\b(del|della|dei|delle|di)\s+(dottor|dottoressa|sig|signor|signora|paziente)\s+[A-ZÀ-Ú]/.test(domanda)) {
     return 'sql';
   }
+  if (/\b(of|for)\s+(dr|doctor|patient|mr|mrs|ms)\.?\s+[A-Z]/.test(domanda)) return 'sql';
 
   return null;
 }

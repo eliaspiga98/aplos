@@ -52,3 +52,11 @@ test('case-insensitive sui prefissi', () => {
   assert.equal(quickClassify('mostra i lavori'), 'sql');
   assert.equal(quickClassify('Mostra I Lavori'), 'sql');
 });
+
+test('classifica domande inglesi DATI e INFO', () => {
+  assert.equal(quickClassify('Show me jobs due this week'), 'sql');
+  assert.equal(quickClassify('How many materials are below threshold?'), 'sql');
+  assert.equal(quickClassify('What is the phone number of Dr Smith?'), 'sql');
+  assert.equal(quickClassify('How do I create a new doctor?'), 'info');
+  assert.equal(quickClassify('What does try-in status mean?'), 'info');
+});
