@@ -36,7 +36,33 @@ API e web invece girano "a vista", in due terminali separati, con
 
 ---
 
-## Avvio (`./aplos start`)
+## Avvio automatico
+
+Dal Finder fai doppio clic su **Avvia Aplos Mac.command**, oppure dal
+Terminale esegui:
+
+```bash
+./scripts/macos/start-aplos.sh
+```
+
+Il launcher controlla i prerequisiti, avvia PostgreSQL e MLX se necessario,
+applica le migrazioni, avvia API e web app in background e apre il browser.
+È sicuro eseguirlo più volte. I log sono in `var/logs`.
+
+La web app è raggiungibile anche dagli altri computer della stessa rete su
+`http://IP-DEL-MAC:5173` (macOS potrebbe chiedere di autorizzare le connessioni
+in entrata al primo avvio).
+
+Per chiudere tutto fai doppio clic su **Chiudi Aplos Mac.command**, oppure:
+
+```bash
+./scripts/macos/stop-aplos.sh
+```
+
+PostgreSQL viene fermato soltanto se era stato avviato dal launcher. Il server
+MLX viene invece sempre chiuso per liberare la memoria occupata dal modello.
+
+## Avvio manuale
 
 ### 0. Servizi di base (di solito già attivi)
 
@@ -61,7 +87,7 @@ curl -sS http://127.0.0.1:8080/v1/models  >/dev/null && echo "mlx ok"
 ### 1. API (terminale dedicato)
 
 ```bash
-cd /Users/eliaspiga/lavoro/meres/aplos
+cd /Users/eliaspiga/lavoro/personale/Aplos
 npm run dev:api
 ```
 
@@ -72,7 +98,7 @@ di `api/src/`.
 ### 2. Web (altro terminale dedicato)
 
 ```bash
-cd /Users/eliaspiga/lavoro/meres/aplos
+cd /Users/eliaspiga/lavoro/personale/Aplos
 npm run dev:web
 ```
 
