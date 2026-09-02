@@ -140,6 +140,18 @@ export function IconSettings(p: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function IconBackup(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} {...p}>
+      <path d="M4 7h16v13H4z" />
+      <path d="M3 4h18v3H3z" />
+      <path d="M9 11h6" />
+      <path d="M12 14v4" />
+      <path d="m9.5 16 2.5 2.5 2.5-2.5" />
+    </svg>
+  );
+}
+
 export function IconTool(p: SVGProps<SVGSVGElement>) {
   return <svg {...base} {...p}>
     <path d="M14.7 6.3a4 4 0 0 0-5-5L12 3.6 9.6 6 7.3 3.7a4 4 0 0 0 5 5L4 17l3 3 8.3-8.3a4 4 0 0 0 5-5L18 9l-2.4-2.4 2.3-2.3a4 4 0 0 0-3.2 2z" />

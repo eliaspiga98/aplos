@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import { useAuth } from '../auth';
+import { IconBackup } from '../components/icons';
+import { useToast } from '../components/Toaster';
 import { useI18n, type Language } from '../i18n';
 
 type AiProvider = 'ollama' | 'mlx';
@@ -78,6 +80,10 @@ function formatBytes(value: number | null): string {
   return `${(value / 1024 ** 3).toFixed(2)} GB`;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : 'Errore di rete';
+}
+
 /**
  * Suggerimenti modelli mostrati come datalist accanto al campo `ai_model`.
  * Liste curate per i due provider — l'utente può comunque digitare qualsiasi
@@ -102,6 +108,7 @@ const MODEL_SUGGESTIONS: Record<AiProvider, string[]> = {
 export function ImpostazioniPage() {
   const { user } = useAuth();
   const { language, setLanguage, t, locale } = useI18n();
+  const { push } = useToast();
   const [form, setForm] = useState<AiSettings | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<AiSettings | null>(null);
   const [health, setHealth] = useState<AiHealth | null>(null);
@@ -131,32 +138,48 @@ export function ImpostazioniPage() {
       return;
     }
     try {
-      const [s, h, database] = await Promise.all([
+      const [settingsResult, healthResult, databaseResult] = await Promise.allSettled([
         api.get<AiSettings>('/api/admin/settings/ai'),
-        api.get<AiHealth>('/api/admin/settings/ai/health').catch(
-          (err: unknown) => (err instanceof ApiError ? null : null),
-        ),
+        api.get<AiHealth>('/api/admin/settings/ai/health'),
         api.get<DatabaseSettings>('/api/admin/settings/database'),
       ]);
-      setForm(s);
-      setSavedSnapshot(s);
-      setHealth(h);
-      setDatabaseSettings(database);
-      const nextBackup: BackupForm = {
-        backup_directory: database.backup.backup_directory,
-        backup_schedule: database.backup.backup_schedule,
-        backup_retention_count: database.backup.backup_retention_count,
-      };
-      setBackupForm(nextBackup);
-      setBackupSnapshot(nextBackup);
-      const nextStorage: StorageForm = {
-        config_directory: database.storage.config_directory,
-        uploads_directory: database.storage.uploads_directory,
-      };
-      setStorageForm(nextStorage);
-      setStorageSnapshot(nextStorage);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Errore di rete');
+
+      const errors: string[] = [];
+      if (settingsResult.status === 'fulfilled') {
+        setForm(settingsResult.value);
+        setSavedSnapshot(settingsResult.value);
+      } else {
+        setForm(null);
+        setSavedSnapshot(null);
+        errors.push(`Modello AI: ${errorMessage(settingsResult.reason)}`);
+      }
+      setHealth(healthResult.status === 'fulfilled' ? healthResult.value : null);
+
+      if (databaseResult.status === 'fulfilled') {
+        const database = databaseResult.value;
+        setDatabaseSettings(database);
+        const nextBackup: BackupForm = {
+          backup_directory: database.backup.backup_directory,
+          backup_schedule: database.backup.backup_schedule,
+          backup_retention_count: database.backup.backup_retention_count,
+        };
+        setBackupForm(nextBackup);
+        setBackupSnapshot(nextBackup);
+        const nextStorage: StorageForm = {
+          config_directory: database.storage.config_directory,
+          uploads_directory: database.storage.uploads_directory,
+        };
+        setStorageForm(nextStorage);
+        setStorageSnapshot(nextStorage);
+      } else {
+        setDatabaseSettings(null);
+        setBackupForm(null);
+        setBackupSnapshot(null);
+        setStorageForm(null);
+        setStorageSnapshot(null);
+        errors.push(`Database e backup: ${errorMessage(databaseResult.reason)}`);
+      }
+      setError(errors.length > 0 ? errors.join(' · ') : null);
     } finally {
       setLoading(false);
     }
@@ -265,8 +288,11 @@ export function ImpostazioniPage() {
       const result = await api.post<{ file: string; size_bytes: number }>('/api/admin/settings/database/backup/run');
       setBackupMessage(`Backup completato: ${result.file} (${formatBytes(result.size_bytes)}).`);
       setDatabaseSettings(await api.get<DatabaseSettings>('/api/admin/settings/database'));
+      push(t('Backup completato.'), 'success');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Errore di rete');
+      const message = errorMessage(err);
+      setError(message);
+      push(message, 'error');
     } finally {
       setBackupRunning(false);
     }
@@ -326,8 +352,20 @@ export function ImpostazioniPage() {
 
   return (
     <div className="page">
-      <header className="page-header">
+      <header className="page-header settings-page-header">
         <h1>Impostazioni</h1>
+        {user?.ruolo === 'admin' && (
+          <button
+            type="button"
+            className="btn-primary settings-backup-quick"
+            onClick={() => void onBackupRun()}
+            disabled={loading || !databaseSettings || !backupForm || !!backupDirty || backupSaving || backupRunning}
+            title={backupDirty ? 'Salva prima la configurazione del backup' : 'Crea subito una copia completa del database'}
+          >
+            <IconBackup />
+            {backupRunning ? 'Backup in corso…' : 'Esegui backup ora'}
+          </button>
+        )}
       </header>
 
       {loading && <p>Caricamento…</p>}
@@ -352,7 +390,6 @@ export function ImpostazioniPage() {
       </section>
 
       {form && (
-        <>
           <section className="card settings-card">
             <header className="card-header">
               <h2>Modello AI</h2>
@@ -465,8 +502,9 @@ export function ImpostazioniPage() {
               </p>
             )}
           </section>
+      )}
 
-          {databaseSettings && backupForm && (
+      {databaseSettings && backupForm && (
             <section className="card settings-card">
               <header className="card-header">
                 <h2>Database e backup</h2>
@@ -640,8 +678,9 @@ export function ImpostazioniPage() {
                 <span>Dimensione: {formatBytes(databaseSettings.backup.backup_last_size_bytes)}</span>
               </div>
             </section>
-          )}
+      )}
 
+      {form && (
           <section className="card settings-help">
             <header className="card-header"><h2>Quando usare cosa</h2></header>
             <ul>
@@ -658,7 +697,6 @@ export function ImpostazioniPage() {
               </li>
             </ul>
           </section>
-        </>
       )}
     </div>
   );

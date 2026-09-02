@@ -152,6 +152,7 @@ const EN: Record<string, string> = {
   'Backup in corso': 'Backup running',
   'Backup in corso…': 'Backing up…',
   'Esegui backup ora': 'Run backup now',
+  'Backup completato.': 'Backup completed.',
   'Salva prima le modifiche.': 'Save the changes first.',
   'Ultimo backup:': 'Last backup:',
   'Ultimo errore:': 'Last error:',
