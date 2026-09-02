@@ -57,6 +57,11 @@ const ListQuery = Type.Object({
 
 const IdParams = Type.Object({ id: Type.Integer({ minimum: 1 }) });
 
+const MATERIAL_IDENTITY_INDEX = 'uq_materiali_identita_attiva';
+const MATERIAL_IDENTITY_ERROR =
+  'Esiste già un materiale attivo con la stessa marca, colore, lotto e misure. ' +
+  'Modifica quello esistente per aumentarne la quantità.';
+
 const FIELDS = [
   'categoria', 'sottotipo', 'marca', 'colore', 'lotto', 'id_deposito',
   'altezza_mm', 'larghezza_mm', 'quantita', 'quantita_parziale', 'unita_misura',
@@ -93,6 +98,11 @@ function normalizedInventory(
     quantita_parziale: quantitaParziale,
     stato_utilizzo: materialState(quantitaNuova, quantitaParziale),
   };
+}
+
+function isMaterialIdentityConflict(error: unknown): boolean {
+  const databaseError = error as { code?: string; constraint?: string };
+  return databaseError.code === '23505' && databaseError.constraint === MATERIAL_IDENTITY_INDEX;
 }
 
 export async function materialiRoutes(app: FastifyInstance) {
@@ -199,12 +209,20 @@ export async function materialiRoutes(app: FastifyInstance) {
     const values = cols.map((f) => (f === 'attributi_extra' ? JSON.stringify(b[f] ?? {}) : b[f] ?? null));
     const placeholders = cols.map((_, i) => `$${i + 1}`);
 
-    const result = await req.pool.query(
-      `INSERT INTO materiali (${cols.join(', ')})
-       VALUES (${placeholders.join(', ')})
-       RETURNING *`,
-      values,
-    );
+    let result;
+    try {
+      result = await req.pool.query(
+        `INSERT INTO materiali (${cols.join(', ')})
+         VALUES (${placeholders.join(', ')})
+         RETURNING *`,
+        values,
+      );
+    } catch (error) {
+      if (isMaterialIdentityConflict(error)) {
+        return reply.code(409).send({ error: MATERIAL_IDENTITY_ERROR });
+      }
+      throw error;
+    }
     const created = result.rows[0];
 
     await logAudit(req.pool, {
@@ -228,33 +246,41 @@ export async function materialiRoutes(app: FastifyInstance) {
       const requestedCols = FIELDS.filter((f) => b[f] !== undefined);
       if (requestedCols.length === 0) return reply.code(400).send({ error: 'Nessun campo da aggiornare' });
 
-      const updated = await withTx(req.pool, async (client) => {
-        const currentResult = await client.query<{
-          quantita: string;
-          quantita_parziale: string;
-        }>(
-          `SELECT quantita, quantita_parziale
-           FROM materiali
-           WHERE id = $1 AND deleted_at IS NULL
-           FOR UPDATE`,
-          [id],
-        );
-        const current = currentResult.rows[0];
-        if (!current) return null;
+      let updated;
+      try {
+        updated = await withTx(req.pool, async (client) => {
+          const currentResult = await client.query<{
+            quantita: string;
+            quantita_parziale: string;
+          }>(
+            `SELECT quantita, quantita_parziale
+             FROM materiali
+             WHERE id = $1 AND deleted_at IS NULL
+             FOR UPDATE`,
+            [id],
+          );
+          const current = currentResult.rows[0];
+          if (!current) return null;
 
-        Object.assign(b, normalizedInventory(b, current));
-        const cols = FIELDS.filter((f) => b[f] !== undefined);
-        const values = cols.map((f) => (f === 'attributi_extra' ? JSON.stringify(b[f]) : b[f]));
-        const setSql = cols.map((c, i) => `${c} = $${i + 1}`).join(', ');
-        values.push(id);
-        const result = await client.query(
-          `UPDATE materiali SET ${setSql}
-           WHERE id = $${cols.length + 1} AND deleted_at IS NULL
-           RETURNING *`,
-          values,
-        );
-        return result.rows[0] ?? null;
-      });
+          Object.assign(b, normalizedInventory(b, current));
+          const cols = FIELDS.filter((f) => b[f] !== undefined);
+          const values = cols.map((f) => (f === 'attributi_extra' ? JSON.stringify(b[f]) : b[f]));
+          const setSql = cols.map((c, i) => `${c} = $${i + 1}`).join(', ');
+          values.push(id);
+          const result = await client.query(
+            `UPDATE materiali SET ${setSql}
+             WHERE id = $${cols.length + 1} AND deleted_at IS NULL
+             RETURNING *`,
+            values,
+          );
+          return result.rows[0] ?? null;
+        });
+      } catch (error) {
+        if (isMaterialIdentityConflict(error)) {
+          return reply.code(409).send({ error: MATERIAL_IDENTITY_ERROR });
+        }
+        throw error;
+      }
       if (!updated) return reply.code(404).send({ error: 'Materiale non trovato' });
 
       await logAudit(req.pool, {

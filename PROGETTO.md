@@ -111,6 +111,9 @@ esplicito > meta-programmazione.
   `altro`). Form di inserimento con campi base + `attributi_extra` JSONB per
   attributi non standard.
 - Stati cialde: `nuovo` / `parziale` / `esaurito`.
+- La stessa categoria e lo stesso lotto possono comparire su righe differenti
+  quando cambia marca, colore, altezza o larghezza. Soltanto i materiali con
+  tutti questi dati uguali condividono la stessa quantità di magazzino.
 - Alert quando sotto `soglia_alert`.
 - Filtri per lotto, marca, deposito.
 

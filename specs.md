@@ -138,6 +138,10 @@ La legge impone ai laboratori di sapere *esattamente* quale lotto di materiale (
 Le informazioni critiche da gestire per ogni disco (es. Zirconio):
 * **Lotto & Marca:** Per la tracciabilità e i richiami in caso di materiale difettoso.
 * **Altezza e Larghezza:** Per i software CAM.
+* **Identità della scorta:** Due dischi con lo stesso lotto restano materiali
+  distinti se differiscono per marca, colore, altezza o larghezza. La quantità
+  può essere aggregata sulla stessa riga soltanto quando tutti questi dati,
+  insieme a categoria e lotto, coincidono.
 * **Stato della Scorta ("Riutilizzare"):** Un disco di zirconio costa molto. Viene inserito nella fresatrice, vi si ricava un dente, e poi viene rimesso in scatola perché ha ancora spazio utilizzabile. Il sistema deve supportare gli stati: *Nuovo*, *Riutilizzabile* (in uso parziale) ed *Esaurito*.
 
 ### 6.4 Macchinari e manutenzioni programmate

@@ -167,6 +167,7 @@ dalla root delegano ai workspace.
 | `0009_macchinari_manutenzioni.sql` | Anagrafica macchinari, manutenzioni singole/ricorrenti, storico interventi e lettura notifiche per operatore. |
 | `0010_material_inventory.sql` | Quantità nuove/parziali separate e provenienza di ogni utilizzo materiale. |
 | `0011_document_library.sql` | Categorie documentali, metadati PDF, frammenti di testo e indice full-text per le risposte AI con fonti. |
+| `0012_material_identity.sql` | Sostituisce l'unicità categoria/lotto con l'identità completa categoria, lotto, marca, colore e dimensioni per le scorte attive. |
 
 ### 4.3 Modello — entità principali
 
