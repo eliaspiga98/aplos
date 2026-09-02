@@ -37,7 +37,7 @@ export interface DatabaseLocation {
   server_host: string;
   server_port: number;
   server_address: string | null;
-  data_directory: string;
+  data_directory: string | null;
 }
 
 export interface BackupResult {
@@ -110,12 +110,17 @@ export async function getDatabaseLocation(): Promise<DatabaseLocation> {
     database_name: string;
     server_address: string | null;
     server_port: number;
-    data_directory: string;
+    data_directory: string | null;
   }>(
+    // pg_settings nasconde le impostazioni riservate ai ruoli applicativi:
+    // la sottoquery restituisce NULL senza trasformare l'intera pagina Admin
+    // in un errore 500. Un ruolo autorizzato continua invece a vedere il path.
     `SELECT current_database() AS database_name,
             inet_server_addr()::text AS server_address,
             inet_server_port() AS server_port,
-            current_setting('data_directory') AS data_directory`,
+            (SELECT setting
+               FROM pg_settings
+              WHERE name = 'data_directory') AS data_directory`,
   );
   const row = result.rows[0]!;
   const connection = new URL(config.databaseUrl);

@@ -6,7 +6,7 @@ import {
   IconBriefcase, IconClock, IconAlert, IconCheck, IconBox,
 } from '../components/icons';
 import { CalendarView } from '../components/CalendarView';
-import { labelCategoria, labelStatoLavoro } from '../utils/format';
+import { daysFromToday, formatDateShort, labelCategoria, labelStatoLavoro } from '../utils/format';
 
 const SCADENZA_GIORNI = 7;
 const COLS = 24;              // 24 colonne → granularità orizzontale fine
@@ -16,14 +16,6 @@ const ROW_HEIGHT_PX = 32;     // riga compatta: la matrice è la vera unità
 const GAP_PX = 8;
 const MAX_ROWS = 200;
 const LAYOUT_STORAGE_PREFIX = 'aplos:dashboard:v2';
-
-function daysFromToday(isoDate: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(isoDate);
-  target.setHours(0, 0, 0, 0);
-  return Math.floor((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-}
 
 function isSottoSoglia(m: Materiale): boolean {
   if (!m.soglia_alert) return false;
@@ -139,7 +131,7 @@ function CodaWidget({ lavori, loading, navigate }: BoardData) {
                   <div className={`queue-item-deadline queue-deadline--${lbl.tone}`}>
                     <div className="queue-deadline-rel">{lbl.text}</div>
                     <div className="queue-deadline-date">
-                      {new Date(l.data_consegna).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}
+                      {formatDateShort(l.data_consegna)}
                     </div>
                   </div>
                 </li>
@@ -289,12 +281,9 @@ function TopDottoriWidget({ lavori, loading, navigate }: BoardData) {
 }
 
 function SettimanaWidget({ lavori, loading }: BoardData) {
-  const oggi = new Date();
-  const settimanaScorsa = new Date(oggi); settimanaScorsa.setDate(oggi.getDate() - 7);
-  const trasettimana = new Date(oggi); trasettimana.setDate(oggi.getDate() + 7);
-  const finiti = lavori.filter((l) => l.stato === 'finito' && new Date(l.data_consegna) >= settimanaScorsa && new Date(l.data_consegna) <= oggi).length;
-  const inScadenza = lavori.filter((l) => l.stato !== 'finito' && new Date(l.data_consegna) >= oggi && new Date(l.data_consegna) <= trasettimana).length;
-  const inRitardo = lavori.filter((l) => l.stato !== 'finito' && new Date(l.data_consegna) < oggi).length;
+  const finiti = lavori.filter((l) => l.stato === 'finito' && daysFromToday(l.data_consegna) >= -7 && daysFromToday(l.data_consegna) <= 0).length;
+  const inScadenza = lavori.filter((l) => l.stato !== 'finito' && daysFromToday(l.data_consegna) >= 0 && daysFromToday(l.data_consegna) <= 7).length;
+  const inRitardo = lavori.filter((l) => l.stato !== 'finito' && daysFromToday(l.data_consegna) < 0).length;
   return (
     <section className="card">
       <header className="card-header"><h2>Questa settimana</h2></header>
@@ -326,7 +315,7 @@ function AttivitaWidget({ lavori, loading, navigate }: BoardData) {
                 <div className="top-main">
                   <div className="top-name">{l.nome_paziente}</div>
                   <div className="muted top-sub">
-                    {l.dottore_nome} · {new Date(l.data_consegna).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}
+                    {l.dottore_nome} · {formatDateShort(l.data_consegna)}
                   </div>
                 </div>
                 <span className={`stato-pill stato-pill--${l.stato}`}>{labelStatoLavoro(l.stato)}</span>

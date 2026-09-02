@@ -4,6 +4,7 @@ import { api, ApiError, streamNdjsonPost } from '../api';
 import { useAuth } from '../auth';
 import { LavoroPreviewBlock } from './LavoroPreviewBlock';
 import { useI18n } from '../i18n';
+import { formatDate } from '../utils/format';
 
 interface Message {
   role: 'user' | 'ai' | 'error';
@@ -111,6 +112,9 @@ const COLUMN_LABELS: Record<string, string> = {
 function formatCell(key: string, v: unknown): string {
   if (v === null || v === undefined) return '—';
   if (typeof v === 'string') {
+    if ((key.startsWith('data_') || key.includes('scadenza')) && /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(v)) {
+      return formatDate(v);
+    }
     if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:/.test(v)) {
       const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
       if (key.startsWith('data_') && m) return `${m[3]}/${m[2]}/${m[1]}`;

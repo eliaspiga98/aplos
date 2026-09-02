@@ -15,6 +15,8 @@ tablet condivisi nei banchi di lavoro del laboratorio. Centralizza:
 - ciclo di vita delle commesse (lavori) dall'ordine al pronto-consegna,
 - magazzino dei materiali con tracciabilità lotto → lavoro → paziente,
 - anagrafica clienti (dottori / studi) e operatori,
+- collaboratori fisici del laboratorio e assegnazione delle mansioni ai lavori,
+- macchinari, manutenzioni programmate e avvisi di scadenza,
 - assistente in linguaggio naturale per interrogare i dati.
 
 ## 2. Vincoli normativi
@@ -86,9 +88,25 @@ esplicito > meta-programmazione.
   - **Odontogramma:** selezione denti (notazione FDI 11-48 e 51-85),
     raggruppamento in ponti.
 - Cambio stato come azione separata (registrata in `audit_log`).
+- Quando un lavoro passa in corso, proposta non obbligatoria di assegnare uno
+  o più collaboratori con una mansione (per esempio CAD o rifinitura).
+  Le assegnazioni restano attive attraversando gli altri stati e possono
+  essere modificate in seguito; data di assegnazione e storico sono preservati.
+- La scala colori è una scelta guidata VITA: BL1-BL3, A1-A4 (A3.5 incluso),
+  B1-B4, C1-C4 e D2-D4. D1 non è ammesso.
+- Il dottore può essere creato direttamente dal form del lavoro e viene
+  selezionato senza perdere i dati dell'ordine in compilazione.
 - Registrazione consumo materiale (`lavori_materiali`) come azione separata.
 
-### 5.4 Magazzino Materiali
+### 5.4 Collaboratori di laboratorio
+
+- Anagrafica separata dagli operatori autenticati, con contatti, mansioni e note.
+- Un collaboratore può essere associato a più lavori e lo stesso lavoro può
+  avere più incarichi contemporanei.
+- Archiviare un collaboratore chiude le assegnazioni attive ma non cancella
+  lo storico.
+
+### 5.5 Magazzino Materiali
 - Tab per categoria (`zirconio`, `pmma`, `resina`, `metallo`, `ceramica`,
   `altro`). Form di inserimento con campi base + `attributi_extra` JSONB per
   attributi non standard.
@@ -96,7 +114,17 @@ esplicito > meta-programmazione.
 - Alert quando sotto `soglia_alert`.
 - Filtri per lotto, marca, deposito.
 
-### 5.5 Assistente AI (fase finale)
+### 5.6 Macchinari e manutenzioni
+
+- Anagrafica macchinari con marca, modello, matricola, ubicazione e note.
+- Manutenzioni una tantum o ricorrenti per giorni, mesi o anni, con preavviso
+  configurabile.
+- Popup in-app nel periodo di preavviso e un nuovo avviso il giorno della
+  scadenza; la conferma di lettura è distinta per operatore e occorrenza.
+- Il completamento registra data, operatore e note nell'archivio interventi;
+  una manutenzione ricorrente avanza automaticamente alla prima scadenza futura.
+
+### 5.7 Assistente AI (fase finale)
 - Chat. Domanda in italiano → query SQL → risultato → risposta in italiano.
 - LLM locale, **utente DB read-only** dedicato (no SQL injection via prompt).
 - Schema descritto in un prompt di sistema riutilizzabile.
@@ -114,6 +142,13 @@ Entità:
   `ponte`} + `elementi_dentali SMALLINT[]`. Vincoli CHECK garantiscono
   coerenza (no ponti da 1 dente, no corone con più denti).
 - `lavori_allegati` — file (STL, foto) associati a un lavoro.
+- `collaboratori` — persone che eseguono fisicamente le lavorazioni.
+- `lavori_assegnazioni` — mansione, presa in carico e chiusura incarico,
+  mantenute come storico.
+- `macchinari` — anagrafica delle attrezzature.
+- `manutenzioni_programmate` — prossima scadenza, preavviso e ricorrenza.
+- `manutenzioni_interventi` — registro degli interventi effettuati.
+- `manutenzioni_notifiche_lette` — letture avvisi per operatore/occorrenza.
 - `materiali` — magazzino. `(categoria, lotto)` UNIQUE.
 - `lavori_materiali` — **tracciabilità MDR**. Mai cancellare.
 - `audit_log` — registro azioni immutabile.
@@ -199,6 +234,12 @@ Da affrontare prima del rispettivo modulo:
       (`NotificheBell`), `LavoroPreviewBlock` per anteprime contestuali,
       `DottoreDetailModal`, AiWidget riscritto con storia conversazione e
       suggerimenti.
+- [x] **Fase 13** — Collaboratori separati dagli operatori, assegnazioni
+      multi-mansione con storico, scala VITA completa e creazione rapida dottore.
+- [x] **Fase 14** — Macchinari, manutenzioni programmate ricorrenti, storico
+      interventi e notifiche in-app di preavviso/scadenza.
+- [x] **Fase 15** — Correzione date civili PostgreSQL senza slittamento di fuso
+      orario e isolamento completo delle query di dettaglio nel database demo.
 
 ## 10. Deploy in laboratorio
 

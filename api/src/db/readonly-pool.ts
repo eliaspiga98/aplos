@@ -1,5 +1,8 @@
 import pg from 'pg';
 import { config } from '../config.js';
+import { configurePostgresDateParser } from './date-types.js';
+
+configurePostgresDateParser();
 
 /**
  * Pool dedicato al modulo AI (text-to-SQL). Dovrebbe puntare a un utente DB

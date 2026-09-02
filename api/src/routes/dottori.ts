@@ -23,7 +23,7 @@ const PartialBody = Type.Partial(Body);
 
 const ListQuery = Type.Object({
   q: Type.Optional(Type.String()),
-  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   offset: Type.Optional(Type.Integer({ minimum: 0 })),
 });
 

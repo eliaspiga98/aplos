@@ -15,6 +15,9 @@ test('sostantivi del dominio come prefisso → DATI', () => {
   assert.equal(quickClassify('Lavori in scadenza'), 'sql');
   assert.equal(quickClassify('Materiali zirconio'), 'sql');
   assert.equal(quickClassify('Cialde di pmma'), 'sql');
+  assert.equal(quickClassify('Collaboratori assegnati oggi'), 'sql');
+  assert.equal(quickClassify('Macchinari con manutenzione in scadenza'), 'sql');
+  assert.equal(quickClassify('Manutenzioni scadute'), 'sql');
 });
 
 test('domande informative → INFO', () => {

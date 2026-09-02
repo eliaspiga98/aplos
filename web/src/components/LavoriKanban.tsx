@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { api, ApiError, type Lavoro, type StatoLavoro } from '../api';
 import { useToast } from './Toaster';
+import { daysFromToday, formatDateShort } from '../utils/format';
+import { AssegnazioniModal } from './AssegnazioniModal';
 
 interface Props {
   lavori: Lavoro[];
   onChange: (next: Lavoro[]) => void;
   onOpen: (id: number) => void;
+  onRefresh: () => void;
 }
 
 const COLUMNS: Array<{ key: StatoLavoro; label: string }> = [
@@ -15,17 +18,10 @@ const COLUMNS: Array<{ key: StatoLavoro; label: string }> = [
   { key: 'finito',    label: 'Finito' },
 ];
 
-function daysFromToday(isoDate: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(isoDate);
-  target.setHours(0, 0, 0, 0);
-  return Math.floor((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-export function LavoriKanban({ lavori, onChange, onOpen }: Props) {
+export function LavoriKanban({ lavori, onChange, onOpen, onRefresh }: Props) {
   const [dragId, setDragId] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<StatoLavoro | null>(null);
+  const [pendingMove, setPendingMove] = useState<{ id: number; stato: StatoLavoro } | null>(null);
   const { push } = useToast();
 
   const grouped = COLUMNS.reduce(
@@ -45,6 +41,11 @@ export function LavoriKanban({ lavori, onChange, onOpen }: Props) {
     if (dragId == null) return;
     const lavoro = lavori.find((l) => l.id === dragId);
     if (!lavoro || lavoro.stato === stato) return;
+    if (stato === 'in_corso') {
+      setPendingMove({ id: dragId, stato });
+      setDragId(null);
+      return;
+    }
     // Optimistic update
     const prev = lavori;
     onChange(lavori.map((l) => l.id === dragId ? { ...l, stato } : l));
@@ -57,7 +58,7 @@ export function LavoriKanban({ lavori, onChange, onOpen }: Props) {
     setDragId(null);
   }
 
-  return (
+  return <>
     <div className="kanban">
       {COLUMNS.map((col) => (
         <div
@@ -101,8 +102,13 @@ export function LavoriKanban({ lavori, onChange, onOpen }: Props) {
                     {l.dottore_nome}
                     {l.dottore_studio ? ` — ${l.dottore_studio}` : ''}
                   </div>
+                  {l.assegnazioni.length > 0 && <div className="kanban-assignees">
+                    {l.assegnazioni.map((a) => <span className="assignment-chip" key={a.id} title={a.mansione}>
+                      {a.collaboratore_nome} · {a.mansione}
+                    </span>)}
+                  </div>}
                   <footer className="kanban-card-foot muted">
-                    Consegna: {new Date(l.data_consegna).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}
+                    Consegna: {formatDateShort(l.data_consegna)}
                   </footer>
                 </article>
               );
@@ -114,5 +120,16 @@ export function LavoriKanban({ lavori, onChange, onOpen }: Props) {
         </div>
       ))}
     </div>
-  );
+    {pendingMove && <AssegnazioniModal
+      open
+      idLavoro={pendingMove.id}
+      targetState={pendingMove.stato}
+      current={lavori.find((l) => l.id === pendingMove.id)?.assegnazioni}
+      onClose={() => setPendingMove(null)}
+      onSaved={(next) => {
+        if (next) onChange(lavori.map((l) => l.id === pendingMove.id ? { ...l, stato: next } : l));
+        onRefresh();
+      }}
+    />}
+  </>;
 }

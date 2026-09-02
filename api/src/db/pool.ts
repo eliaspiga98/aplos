@@ -1,5 +1,11 @@
 import pg from 'pg';
 import { config } from '../config.js';
+import { configurePostgresDateParser } from './date-types.js';
+
+// PostgreSQL DATE rappresenta un giorno civile, non un istante. Il parser
+// predefinito di `pg` crea invece un Date a mezzanotte locale che, durante la
+// serializzazione JSON, può diventare il giorno precedente in UTC.
+configurePostgresDateParser();
 
 export const pool = new pg.Pool({
   connectionString: config.databaseUrl,

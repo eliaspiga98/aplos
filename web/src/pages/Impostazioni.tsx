@@ -36,7 +36,7 @@ interface DatabaseSettings {
     server_host: string;
     server_port: number;
     server_address: string | null;
-    data_directory: string;
+    data_directory: string | null;
   };
   backup: {
     backup_directory: string;
@@ -486,7 +486,7 @@ export function ImpostazioniPage() {
                 </div>
                 <div className="database-location--wide">
                   <span>Percorso dati PostgreSQL</span>
-                  <code>{databaseSettings.database.data_directory}</code>
+                  <code>{databaseSettings.database.data_directory ?? 'Non disponibile con i permessi applicativi'}</code>
                 </div>
               </div>
 

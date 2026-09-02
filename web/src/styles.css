@@ -2449,6 +2449,49 @@ body.is-resizing-ai * { pointer-events: none; }
   transform: translateY(-1px);
 }
 
+/* ---------- Collaboratori e assegnazioni ---------- */
+.form-field { display: flex; flex-direction: column; gap: 0.35rem; }
+.field-label-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.assignment-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(160px, 1fr) auto; gap: 0.55rem; align-items: center; }
+.assignment-chip { display: inline-flex; padding: 0.18rem 0.45rem; border-radius: 999px; background: var(--sand-soft); color: var(--navy); font-size: 0.72rem; font-weight: 600; }
+.kanban-assignees { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.55rem; }
+.assignment-history-row { opacity: 0.62; }
+
+/* ---------- Selettore scala VITA ---------- */
+.vita-picker { position: relative; }
+.vita-picker-trigger { width: 100%; display: flex; justify-content: space-between; align-items: center; background: white; color: var(--text); border: 1px solid var(--border); font-weight: 500; }
+.vita-palette { margin-top: 0.4rem; padding: 0.7rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--cream); box-shadow: var(--shadow-sm); display: grid; gap: 0.55rem; }
+.vita-group { display: grid; grid-template-columns: 58px 1fr; gap: 0.5rem; align-items: center; }
+.vita-group-label { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.vita-group-values { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.vita-chip { min-width: 48px; padding: 0.38rem 0.55rem; background: #f8f3e8; color: var(--navy); border: 1px solid #d8cdb8; }
+.vita-chip--bleach { background: #fffef8; }
+.vita-chip--a { background: #f4e8ce; }
+.vita-chip--b { background: #f5eccf; }
+.vita-chip--c { background: #e8dfca; }
+.vita-chip--d { background: #ead9bd; }
+.vita-chip--selected { border-color: var(--navy); box-shadow: 0 0 0 2px rgba(28, 49, 68, 0.18); }
+.vita-legacy { margin-top: 0.25rem; font-size: 0.78rem; }
+
+/* ---------- Macchinari e manutenzioni ---------- */
+.maintenance-list { display: grid; gap: 0.65rem; }
+.maintenance-card { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.85rem 1rem; border: 1px solid var(--border); border-left: 4px solid var(--success); border-radius: var(--radius); background: white; }
+.maintenance-card--due { border-left-color: var(--danger); background: #fff9f8; }
+.maintenance-main { min-width: 0; }
+.maintenance-meta { margin-top: 0.4rem; font-size: 0.82rem; font-weight: 600; color: var(--navy); }
+.maintenance-actions { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; justify-content: flex-end; }
+.maintenance-popup-list { display: grid; gap: 0.55rem; }
+.maintenance-popup-item { display: grid; grid-template-columns: 1fr; text-align: left; gap: 0.2rem; padding: 0.8rem 1rem; background: white; color: var(--text); border: 1px solid var(--border); }
+.maintenance-popup-item:hover { background: var(--sand-soft); color: var(--navy); }
+.text-danger { color: var(--danger); font-weight: 700; }
+
+@media (max-width: 760px) {
+  .assignment-row { grid-template-columns: 1fr; }
+  .maintenance-card { align-items: flex-start; flex-direction: column; }
+  .maintenance-actions { justify-content: flex-start; }
+  .vita-group { grid-template-columns: 1fr; }
+}
+
 /* ---------- Tab bar della chat ---------- */
 .ai-tabs {
   display: flex;

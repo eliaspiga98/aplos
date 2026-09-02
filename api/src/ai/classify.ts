@@ -38,12 +38,17 @@ const DATI_NOUN_PREFIXES = [
   'materiali', 'materiale',
   'depositi', 'deposito',
   'operatori', 'operatore',
+  'collaboratori', 'collaboratore',
+  'macchinari', 'macchinario', 'macchine', 'macchina',
+  'manutenzioni', 'manutenzione',
   'pazienti', 'paziente',
   'allegati', 'allegato',
   'cialde', 'cialda',
   'lotti', 'lotto',
   'jobs', 'job', 'orders', 'order', 'doctors', 'doctor',
   'materials', 'material', 'storage locations', 'operators', 'operator',
+  'collaborators', 'collaborator', 'machines', 'machine',
+  'maintenance', 'maintenances',
   'patients', 'patient', 'attachments', 'attachment', 'batches', 'batch',
 ];
 

@@ -99,7 +99,8 @@ launcher non sostituisce copie cifrate e testate dei dati sanitari.
 
 In **Impostazioni → Database e backup** l'amministratore può:
 
-- vedere nome, host e directory fisica del database PostgreSQL utilizzato;
+- vedere nome e host del database PostgreSQL utilizzato; la directory fisica
+  viene mostrata solo quando il ruolo PostgreSQL dispone del relativo permesso;
 - indicare una cartella sul PC server, per esempio `D:\Backup\Aplos`;
 - eseguire subito un backup manuale;
 - pianificare un backup giornaliero o settimanale;

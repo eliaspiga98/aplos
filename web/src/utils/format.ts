@@ -8,22 +8,63 @@ import type { CategoriaMateriale, StatoUtilizzo } from '../api';
 /* ------------------------------------------------------------------ Date */
 
 /**
- * Date ISO (yyyy-mm-dd o ISO completo) → "gg/mm/aaaa". Le date "pure" sono
- * salvate come timestamp UTC midnight: stampandole in IT ricevono lo shift
- * di timezone, quindi parsiamo manualmente i primi 10 caratteri se sono
- * solo data.
+ * Date ISO (yyyy-mm-dd o ISO completo) → "gg/mm/aaaa". Le date civili
+ * PostgreSQL arrivano come stringhe pure e vengono formattate senza passare
+ * da UTC, così il giorno scelto dall'utente resta invariato.
  */
 export function formatDate(value: string | Date | null | undefined): string {
   if (value == null || value === '') return '—';
   if (value instanceof Date) {
     return isNaN(value.getTime()) ? '—' : value.toLocaleDateString('it-IT');
   }
-  // Date "pure" salvate come ISO con T00:00 — usiamo le componenti UTC per
-  // evitare lo shift di timezone (Europa/Roma sposta indietro di 2 ore).
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (m) return `${m[3]}/${m[2]}/${m[1]}`;
   const d = new Date(value);
   return isNaN(d.getTime()) ? value : d.toLocaleDateString('it-IT');
+}
+
+/** Converte una data API in una Date locale, senza interpretare YYYY-MM-DD come UTC. */
+export function dateAtLocalMidnight(value: string | Date): Date {
+  if (value instanceof Date) {
+    const d = new Date(value);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(value);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+export function toDateInputValue(value: string | Date): string {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const d = dateAtLocalMidnight(value);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function todayDateInput(): string {
+  return toDateInputValue(new Date());
+}
+
+export function addDaysDateInput(days: number): string {
+  const d = dateAtLocalMidnight(new Date());
+  d.setDate(d.getDate() + days);
+  return toDateInputValue(d);
+}
+
+export function daysFromToday(value: string | Date): number {
+  const today = dateAtLocalMidnight(new Date());
+  const target = dateAtLocalMidnight(value);
+  const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const targetUtc = Date.UTC(target.getFullYear(), target.getMonth(), target.getDate());
+  return Math.round((targetUtc - todayUtc) / 86_400_000);
+}
+
+export function formatDateShort(value: string | Date): string {
+  const d = dateAtLocalMidnight(value);
+  return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
 }
 
 export function formatDateTime(value: string | Date | null | undefined): string {

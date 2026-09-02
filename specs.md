@@ -83,10 +83,16 @@ L'interfaccia di inserimento è una modale che raggruppa le specifiche tecniche 
 * **Dottore & Paziente:** Necessari per la fatturazione e la dichiarazione di conformità.
 * **Date (Entrata e Consegna):**
     * **Logica:** La `Data Consegna` è critica. Il sistema deve permettere l'ordinamento dell'intera tabella lavori per "Data di Consegna più vicina" per gestire le priorità (Deadline management).
+    * **Integrità della data civile:** il giorno scelto deve essere mostrato e
+      salvato invariato in ogni vista, senza conversioni di fuso orario che lo
+      anticipino o posticipino.
 
 #### B. Dati Tecnici
 * **Scala Colori (es. Scala VITA):**
     * **A cosa serve:** Determina l'estetica del dente finto (es. A1, A2, B3). Essenziale per la fase di ceramizzazione. Deve essere un menu a tendina standardizzato.
+    * **Valori ammessi:** BL1, BL2, BL3, A1, A2, A3, A3.5, A4, B1, B2,
+      B3, B4, C1, C2, C3, C4, D2, D3, D4. D1 non esiste e non deve essere
+      selezionabile.
 * **Tipologia Lavoro & Istruzioni:**
     * **A cosa serve:** Campi di testo libero per dettagli specifici richiesti dal medico (es. "Modellare la cuspide leggermente più piatta").
 * **Allegati:**
@@ -98,6 +104,24 @@ L'interfaccia di inserimento è una modale che raggruppa le specifiche tecniche 
     * In odontoiatria, una "corona" è un dente singolo. Un "ponte" è una struttura che unisce più denti (es. manca il dente 13, si crea un ponte tra 12 e 14).
     * **Interazione:** L'operatore clicca i denti (es. 12, 13, 14). Il sistema deve fornire un pulsante "Collega" o "Crea Ponte". Visivamente, i pulsanti devono apparire uniti.
     * **Struttura Dati:** Il database non deve salvare solo "Denti interessati: 12, 13, 14", ma deve distinguere se sono tre corone singole o un ponte unico. (Es. JSON: `{"tipo": "ponte", "elementi": [12,13,14]}`).
+
+### 5.3 Collaboratori e assegnazione dei lavori
+
+* I collaboratori sono le persone che eseguono fisicamente le lavorazioni e
+  sono distinti dagli operatori autorizzati ad accedere al programma.
+* Un lavoro può avere più collaboratori contemporaneamente, anche con mansioni
+  differenti (per esempio CAD e rifinitura).
+* Nel passaggio a `in_corso` il sistema propone l'assegnazione, senza renderla
+  obbligatoria. Le assegnazioni possono essere aggiunte o modificate in seguito
+  e non vengono rimosse automaticamente da un cambio di stato.
+* Per ogni incarico devono restare disponibili collaboratore, mansione, data di
+  assegnazione e data di eventuale rimozione.
+
+### 5.4 Inserimento rapido del dottore
+
+* Il form di creazione del lavoro permette di creare un nuovo dottore senza
+  uscire dall'ordine e senza perdere i dati già compilati.
+* Dopo il salvataggio, il nuovo dottore viene selezionato automaticamente.
 
 ---
 
@@ -115,6 +139,19 @@ Le informazioni critiche da gestire per ogni disco (es. Zirconio):
 * **Lotto & Marca:** Per la tracciabilità e i richiami in caso di materiale difettoso.
 * **Altezza e Larghezza:** Per i software CAM.
 * **Stato della Scorta ("Riutilizzare"):** Un disco di zirconio costa molto. Viene inserito nella fresatrice, vi si ricava un dente, e poi viene rimesso in scatola perché ha ancora spazio utilizzabile. Il sistema deve supportare gli stati: *Nuovo*, *Riutilizzabile* (in uso parziale) ed *Esaurito*.
+
+### 6.4 Macchinari e manutenzioni programmate
+
+* Il sistema gestisce l'anagrafica dei macchinari del laboratorio con dati
+  identificativi, ubicazione e note.
+* Ogni macchinario può avere manutenzioni singole o ricorrenti per giorni, mesi
+  o anni, con una data di scadenza e un numero configurabile di giorni di
+  preavviso.
+* L'utente riceve un popup in prossimità della scadenza e un nuovo popup nel
+  giorno della scadenza. La lettura è memorizzata per singolo operatore.
+* Il completamento di una manutenzione registra operatore, data, scadenza
+  prevista e note. Se ricorrente, il sistema calcola la prima scadenza futura;
+  altrimenti la programmazione viene chiusa.
 
 ---
 

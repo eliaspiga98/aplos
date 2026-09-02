@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isValidFDIToothNumber, validateToothArray } from '../src/validators.ts';
+import { isValidFDIToothNumber, isVitaShade, VITA_SHADES, validateToothArray } from '../src/validators.ts';
 
 test('isValidFDIToothNumber accetta i denti permanenti 11-48', () => {
   for (const q of [1, 2, 3, 4]) {
@@ -42,4 +42,13 @@ test('validateToothArray segnala numero non valido', () => {
 
 test('validateToothArray accetta array corretto', () => {
   assert.equal(validateToothArray([12, 13, 14]), null);
+});
+
+test('scala VITA contiene esattamente i 19 colori richiesti e non D1', () => {
+  assert.equal(VITA_SHADES.length, 19);
+  assert.equal(isVitaShade('BL1'), true);
+  assert.equal(isVitaShade('A3.5'), true);
+  assert.equal(isVitaShade('D4'), true);
+  assert.equal(isVitaShade('D1'), false);
+  assert.equal(new Set(VITA_SHADES).size, VITA_SHADES.length);
 });

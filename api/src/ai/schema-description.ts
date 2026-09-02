@@ -23,6 +23,15 @@ lavori(id, id_dottore, nome_paziente, data_entrata, data_consegna, stato, scala_
   stato: 'in_attesa' | 'in_corso' | 'in_prova' | 'finito'
   id_dottore -> dottori(id)
 
+collaboratori(id, nome, telefono, email, mansioni, note, deleted_at, created_at, updated_at)
+lavori_assegnazioni(id, id_lavoro, id_collaboratore, mansione, assegnato_at, rimosso_at, id_operatore_assegnazione, id_operatore_rimozione)
+  id_lavoro -> lavori(id); id_collaboratore -> collaboratori(id)
+
+macchinari(id, nome, marca, modello, matricola, ubicazione, note, deleted_at, created_at, updated_at)
+manutenzioni_programmate(id, id_macchinario, titolo, descrizione, prossima_scadenza, preavviso_giorni, ricorrenza_valore, ricorrenza_unita, attiva, deleted_at)
+manutenzioni_interventi(id, id_manutenzione, scadenza_prevista, completata_at, note, id_operatore)
+  id_macchinario -> macchinari(id); id_manutenzione -> manutenzioni_programmate(id)
+
 lavori_strutture(id, id_lavoro, tipo_struttura, elementi_dentali)
   tipo_struttura: 'corona_singola' | 'ponte'
   elementi_dentali: SMALLINT[]  -- numeri denti FDI 11..48 (permanenti) e 51..85 (decidui)
@@ -40,14 +49,17 @@ audit_log(id, id_operatore, azione, entita, id_entita, dettagli, created_at)
 
 REGOLE DI INTERROGAZIONE:
 - Soft delete (\`deleted_at IS NULL\`) ESISTE SOLO su: operatori, dottori,
-  lavori, materiali, depositi.
+  lavori, materiali, depositi, collaboratori, macchinari e manutenzioni_programmate.
 - NON usare deleted_at su: lavori_strutture, lavori_allegati,
-  lavori_materiali, audit_log (sono tabelle immutabili o di
+  lavori_materiali, lavori_assegnazioni, manutenzioni_interventi,
+  audit_log (sono tabelle immutabili o di
   collegamento, non hanno la colonna).
 - Per "in giacenza" dei materiali: \`stato_utilizzo <> 'esaurito' AND deleted_at IS NULL\`.
 - Per "lavori attivi": \`stato <> 'finito' AND l.deleted_at IS NULL\`.
 - Le date sono di tipo DATE; per "oggi" usa \`CURRENT_DATE\`.
 - I nomi dei colori (es. A2) sono salvati come testo nel campo \`colore\`.
+- Il colore del lavoro è \`scala_colori\` e usa la scala VITA: BL1-BL3,
+  A1-A4 (incluso A3.5), B1-B4, C1-C4, D2-D4; D1 non esiste.
 - Per cercare "lavori che usano materiale X" fai JOIN
   lavori → lavori_materiali → materiali, filtrando solo su
   \`materiali.categoria\`/\`materiali.colore\`/\`materiali.lotto\` e

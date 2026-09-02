@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Lavoro } from '../api';
+import { toDateInputValue } from '../utils/format';
 
 const STATO_LABEL: Record<string, string> = {
   in_attesa: 'In attesa', in_corso: 'In corso', in_prova: 'In prova', finito: 'Finito',
@@ -28,7 +29,7 @@ function buildGrid(year: number, month: number, lavori: Lavoro[]): Cell[] {
 
   const byIso = new Map<string, Lavoro[]>();
   for (const l of lavori) {
-    const iso = l.data_consegna.slice(0, 10);
+    const iso = toDateInputValue(l.data_consegna);
     const arr = byIso.get(iso) ?? [];
     arr.push(l);
     byIso.set(iso, arr);

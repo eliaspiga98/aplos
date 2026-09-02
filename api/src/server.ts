@@ -18,6 +18,8 @@ import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { operatoriRoutes } from './routes/operatori.js';
 import { dottoriRoutes } from './routes/dottori.js';
+import { collaboratoriRoutes } from './routes/collaboratori.js';
+import { macchinariRoutes } from './routes/macchinari.js';
 import { lavoriRoutes } from './routes/lavori.js';
 import { materialiRoutes } from './routes/materiali.js';
 import { depositiRoutes } from './routes/depositi.js';
@@ -81,6 +83,8 @@ async function buildServer() {
   await app.register(authRoutes, { prefix: '/api/auth' });
   await app.register(operatoriRoutes, { prefix: '/api/operatori' });
   await app.register(dottoriRoutes, { prefix: '/api/dottori' });
+  await app.register(collaboratoriRoutes, { prefix: '/api/collaboratori' });
+  await app.register(macchinariRoutes, { prefix: '/api/macchinari' });
   await app.register(lavoriRoutes, { prefix: '/api/lavori' });
   await app.register(materialiRoutes, { prefix: '/api/materiali' });
   await app.register(depositiRoutes, { prefix: '/api/depositi' });

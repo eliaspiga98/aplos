@@ -4,6 +4,7 @@ import { Modal } from './Modal';
 import { RegistraConsumoForm } from './RegistraConsumoForm';
 import { AllegatiSection } from './AllegatiSection';
 import { LavoroFormModal } from './LavoroFormModal';
+import { AssegnazioniModal } from './AssegnazioniModal';
 import { useConfirm } from './ConfirmDialog';
 import { useToast } from './Toaster';
 import { api, ApiError, type LavoroDettaglio, type TimelineEvent } from '../api';
@@ -37,6 +38,10 @@ function labelAzione(ev: TimelineEvent): string {
       return 'Allegato eliminato';
     case 'DELETE_LAVORO':
       return 'Lavoro eliminato';
+    case 'ASSEGNA_COLLABORATORE':
+      return `Collaboratore assegnato — ${(d['mansione'] as string) ?? ''}`;
+    case 'UPDATE_ASSEGNAZIONI_LAVORO':
+      return `Assegnazioni aggiornate (${(d['attive'] as number) ?? 0} attive)`;
     default:
       return ev.azione.replaceAll('_', ' ').toLowerCase();
   }
@@ -49,6 +54,7 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
   const [showRegistra, setShowRegistra] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [showAssignments, setShowAssignments] = useState(false);
   const confirm = useConfirm();
   const { push } = useToast();
   const navigate = useNavigate();
@@ -156,6 +162,24 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
               <dt>Istruzioni</dt>
               <dd>{data.note_istruzioni ?? <span className="muted">—</span>}</dd>
             </dl>
+          </section>
+
+          <section>
+            <header className="section-header">
+              <h3>Collaboratori ({data.assegnazioni.filter((a) => !a.rimosso_at).length})</h3>
+              <button type="button" onClick={() => setShowAssignments(true)}>Gestisci</button>
+            </header>
+            {data.assegnazioni.length === 0 ? <p className="muted">Nessun collaboratore assegnato.</p> : (
+              <table className="table table--compact">
+                <thead><tr><th>Collaboratore</th><th>Mansione</th><th>Assegnato il</th><th>Stato</th></tr></thead>
+                <tbody>{data.assegnazioni.map((a) => <tr key={a.id} className={a.rimosso_at ? 'assignment-history-row' : ''}>
+                  <td><strong>{a.collaboratore_nome}</strong></td>
+                  <td>{a.mansione}</td>
+                  <td>{formatDateTime(a.assegnato_at)}</td>
+                  <td>{a.rimosso_at ? `Rimosso il ${formatDateTime(a.rimosso_at)}` : <span className="stato-pill stato-pill--in_corso">Attivo</span>}</td>
+                </tr>)}</tbody>
+              </table>
+            )}
           </section>
 
           <section>
@@ -289,6 +313,16 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
         }}
         lavoro={data}
       />
+      {data && <AssegnazioniModal
+        open={showAssignments}
+        idLavoro={data.id}
+        current={data.assegnazioni}
+        onClose={() => setShowAssignments(false)}
+        onSaved={() => {
+          void fetchData();
+          onChanged();
+        }}
+      />}
     </Modal>
   );
 }

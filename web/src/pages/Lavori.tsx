@@ -149,6 +149,7 @@ export function LavoriPage() {
           lavori={lavori}
           onChange={setLavori}
           onOpen={(id) => setOpenId(id)}
+          onRefresh={() => void fetchLavori(debouncedQ, stato, offset, view)}
         />
       ) : (
         <>
@@ -158,6 +159,7 @@ export function LavoriPage() {
                 <th>ID</th>
                 <th>Paziente</th>
                 <th>Dottore</th>
+                <th>Collaboratori</th>
                 <th>Entrata</th>
                 <th>Consegna</th>
                 <th>Stato</th>
@@ -172,19 +174,27 @@ export function LavoriPage() {
                     {l.dottore_nome}
                     {l.dottore_studio ? <span className="muted"> — {l.dottore_studio}</span> : null}
                   </td>
+                  <td>{l.assegnazioni.length > 0
+                    ? l.assegnazioni.map((a) => `${a.collaboratore_nome} (${a.mansione})`).join(', ')
+                    : <span className="muted">—</span>}
+                  </td>
                   <td>{formatDate(l.data_entrata)}</td>
                   <td>{formatDate(l.data_consegna)}</td>
                   <td>
                     <StatoLavoroSelect
                       idLavoro={l.id}
                       stato={l.stato}
-                      onChange={(next) => applyStato(l.id, next)}
+                      assegnazioni={l.assegnazioni}
+                      onChange={(next) => {
+                        applyStato(l.id, next);
+                        void fetchLavori(debouncedQ, stato, offset, view);
+                      }}
                     />
                   </td>
                 </tr>
               ))}
               {lavori.length === 0 && (
-                <tr><td colSpan={6} className="muted">Nessun lavoro</td></tr>
+                <tr><td colSpan={7} className="muted">Nessun lavoro</td></tr>
               )}
             </tbody>
           </table>

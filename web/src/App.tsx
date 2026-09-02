@@ -10,6 +10,8 @@ import { DottoriPage } from './pages/Dottori';
 import { MaterialiPage } from './pages/Materiali';
 import { DepositiPage } from './pages/Depositi';
 import { OperatoriPage } from './pages/Operatori';
+import { CollaboratoriPage } from './pages/Collaboratori';
+import { MacchinariPage } from './pages/Macchinari';
 import { ImpostazioniPage } from './pages/Impostazioni';
 import { useInactivityLogout } from './hooks/useInactivityLogout';
 
@@ -49,6 +51,8 @@ export default function App() {
               <Route path="/materiali" element={<MaterialiPage />} />
               <Route path="/depositi" element={<DepositiPage />} />
               <Route path="/operatori" element={<OperatoriPage />} />
+              <Route path="/collaboratori" element={<CollaboratoriPage />} />
+              <Route path="/macchinari" element={<MacchinariPage />} />
               <Route path="/impostazioni" element={<ImpostazioniPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

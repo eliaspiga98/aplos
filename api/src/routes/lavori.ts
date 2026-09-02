@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
 
-import { pool, withTx } from '../db/pool.js';
+import { withTx } from '../db/pool.js';
 import { logAudit } from '../audit.js';
 import { requireAuth } from '../auth/guards.js';
-import { validateToothArray } from '../validators.js';
+import { isVitaShade, validateToothArray } from '../validators.js';
 import { rowsToCsv, csvFilename } from '../csv.js';
 
 const StatoLavoro = Type.Union([
@@ -24,6 +24,11 @@ const Struttura = Type.Object({
   elementi_dentali: Type.Array(Type.Integer({ minimum: 11, maximum: 89 })),
 });
 
+const AssegnazioneInput = Type.Object({
+  id_collaboratore: Type.Integer({ minimum: 1 }),
+  mansione: Type.String({ minLength: 1, maxLength: 120 }),
+});
+
 const CreateBody = Type.Object({
   id_dottore: Type.Integer({ minimum: 1 }),
   nome_paziente: Type.String({ minLength: 1, maxLength: 200 }),
@@ -40,7 +45,10 @@ const UpdateBody = Type.Partial(
   Type.Omit(CreateBody, ['strutture']),
 );
 
-const StatoBody = Type.Object({ stato: StatoLavoro });
+const StatoBody = Type.Object({
+  stato: StatoLavoro,
+  assegnazioni: Type.Optional(Type.Array(AssegnazioneInput, { maxItems: 20 })),
+});
 
 const ListQuery = Type.Object({
   q: Type.Optional(Type.String()),
@@ -50,6 +58,13 @@ const ListQuery = Type.Object({
 });
 
 const IdParams = Type.Object({ id: Type.Integer({ minimum: 1 }) });
+const UPDATE_KEYS = [
+  'id_dottore', 'nome_paziente', 'data_entrata', 'data_consegna', 'stato',
+  'scala_colori', 'tipologia_lavoro', 'note_istruzioni',
+] as const;
+const AssegnazioniBody = Type.Object({
+  assegnazioni: Type.Array(AssegnazioneInput, { maxItems: 20 }),
+});
 
 const RegistraMaterialeBody = Type.Object({
   id_materiale: Type.Integer({ minimum: 1 }),
@@ -104,6 +119,18 @@ export async function lavoriRoutes(app: FastifyInstance) {
       SELECT l.id, l.nome_paziente, l.data_entrata, l.data_consegna, l.stato,
              l.scala_colori, l.tipologia_lavoro,
              d.id AS id_dottore, d.nome AS dottore_nome, d.studio AS dottore_studio,
+             COALESCE((
+               SELECT json_agg(json_build_object(
+                 'id', a.id,
+                 'id_collaboratore', a.id_collaboratore,
+                 'collaboratore_nome', c.nome,
+                 'mansione', a.mansione,
+                 'assegnato_at', a.assegnato_at
+               ) ORDER BY a.assegnato_at)
+               FROM lavori_assegnazioni a
+               JOIN collaboratori c ON c.id = a.id_collaboratore
+               WHERE a.id_lavoro = l.id AND a.rimosso_at IS NULL
+             ), '[]'::json) AS assegnazioni,
              l.created_at, l.updated_at,
              COUNT(*) OVER () AS _total
       FROM lavori l
@@ -180,26 +207,39 @@ export async function lavoriRoutes(app: FastifyInstance) {
     const row = lavoro.rows[0];
     if (!row) return reply.code(404).send({ error: 'Lavoro non trovato' });
 
-    const [strutture, allegati, materiali] = await Promise.all([
-      pool.query(
+    const [strutture, allegati, materiali, assegnazioni] = await Promise.all([
+      req.pool.query(
         `SELECT id, tipo_struttura, elementi_dentali
          FROM lavori_strutture WHERE id_lavoro = $1
          ORDER BY id ASC`,
         [id],
       ),
-      pool.query(
+      req.pool.query(
         `SELECT id, nome_file, mime_type, size_bytes, created_at
          FROM lavori_allegati WHERE id_lavoro = $1
          ORDER BY created_at DESC`,
         [id],
       ),
-      pool.query(
+      req.pool.query(
         `SELECT lm.id, lm.quantita_usata, lm.unita_misura, lm.note, lm.created_at,
                 m.id AS id_materiale, m.categoria, m.lotto, m.marca, m.colore
          FROM lavori_materiali lm
          JOIN materiali m ON m.id = lm.id_materiale
          WHERE lm.id_lavoro = $1
          ORDER BY lm.created_at DESC`,
+        [id],
+      ),
+      req.pool.query(
+        `SELECT a.id, a.id_collaboratore, c.nome AS collaboratore_nome,
+                a.mansione, a.assegnato_at, a.rimosso_at,
+                a.id_operatore_assegnazione, oa.nome AS operatore_assegnazione_nome,
+                a.id_operatore_rimozione, ore.nome AS operatore_rimozione_nome
+         FROM lavori_assegnazioni a
+         JOIN collaboratori c ON c.id = a.id_collaboratore
+         LEFT JOIN operatori oa ON oa.id = a.id_operatore_assegnazione
+         LEFT JOIN operatori ore ON ore.id = a.id_operatore_rimozione
+         WHERE a.id_lavoro = $1
+         ORDER BY (a.rimosso_at IS NULL) DESC, a.assegnato_at DESC`,
         [id],
       ),
     ]);
@@ -209,6 +249,7 @@ export async function lavoriRoutes(app: FastifyInstance) {
       strutture: strutture.rows,
       allegati: allegati.rows,
       materiali: materiali.rows,
+      assegnazioni: assegnazioni.rows,
     };
   });
 
@@ -224,6 +265,11 @@ export async function lavoriRoutes(app: FastifyInstance) {
       note_istruzioni?: string | null;
       strutture?: Array<{ tipo_struttura: string; elementi_dentali: number[] }>;
     };
+
+    const shade = b.scala_colori?.trim() || null;
+    if (shade && !isVitaShade(shade)) {
+      return reply.code(400).send({ error: 'Colore VITA non valido' });
+    }
 
     if (b.strutture) {
       for (const s of b.strutture) {
@@ -247,7 +293,7 @@ export async function lavoriRoutes(app: FastifyInstance) {
          RETURNING *`,
         [
           b.id_dottore, b.nome_paziente, b.data_entrata, b.data_consegna, b.stato ?? null,
-          b.scala_colori ?? null, b.tipologia_lavoro ?? null, b.note_istruzioni ?? null,
+          shade, b.tipologia_lavoro ?? null, b.note_istruzioni ?? null,
           req.user!.id,
         ],
       );
@@ -282,8 +328,22 @@ export async function lavoriRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: number };
       const body = req.body as Record<string, unknown>;
-      const keys = Object.keys(body).filter((k) => body[k] !== undefined);
+      const keys = UPDATE_KEYS.filter((key) => body[key] !== undefined);
       if (keys.length === 0) return reply.code(400).send({ error: 'Nessun campo da aggiornare' });
+
+      if (typeof body.scala_colori === 'string') {
+        body.scala_colori = body.scala_colori.trim() || null;
+      }
+      if (typeof body.scala_colori === 'string' && !isVitaShade(body.scala_colori)) {
+        const previous = await req.pool.query<{ scala_colori: string | null }>(
+          `SELECT scala_colori FROM lavori WHERE id = $1 AND deleted_at IS NULL`,
+          [id],
+        );
+        if (!previous.rows[0]) return reply.code(404).send({ error: 'Lavoro non trovato' });
+        if (previous.rows[0].scala_colori !== body.scala_colori) {
+          return reply.code(400).send({ error: 'Colore VITA non valido' });
+        }
+      }
 
       const setSql = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
       const values = keys.map((k) => body[k]);
@@ -320,48 +380,123 @@ export async function lavoriRoutes(app: FastifyInstance) {
     { schema: { params: IdParams, body: StatoBody } },
     async (req, reply) => {
       const { id } = req.params as { id: number };
-      const { stato } = req.body as { stato: string };
+      const requestBody = req.body as {
+        stato: string;
+        assegnazioni?: Array<{ id_collaboratore: number; mansione: string }>;
+      };
+      const { stato } = requestBody;
+      const assignmentsProvided = requestBody.assegnazioni !== undefined;
 
-      const before = await req.pool.query<{ stato: string }>(
-        `SELECT stato FROM lavori WHERE id = $1 AND deleted_at IS NULL`,
-        [id],
-      );
-      const prev = before.rows[0];
-      if (!prev) return reply.code(404).send({ error: 'Lavoro non trovato' });
+      const normalized = (requestBody.assegnazioni ?? []).map((a) => ({
+        id_collaboratore: a.id_collaboratore,
+        mansione: a.mansione.trim(),
+      }));
+      if (normalized.some((a) => a.mansione.length === 0)) {
+        return reply.code(400).send({ error: 'La mansione non può essere vuota' });
+      }
+      const desiredKeys = new Set(normalized.map((a) => `${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
+      if (desiredKeys.size !== normalized.length) {
+        return reply.code(400).send({ error: 'La stessa assegnazione è presente più volte' });
+      }
+      const collaboratorIds = [...new Set(normalized.map((a) => a.id_collaboratore))];
+      if (collaboratorIds.length > 0) {
+        const active = await req.pool.query<{ id: number }>(
+          `SELECT id FROM collaboratori WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL`,
+          [collaboratorIds],
+        );
+        if (active.rows.length !== collaboratorIds.length) {
+          return reply.code(400).send({ error: 'Uno o più collaboratori non sono disponibili' });
+        }
+      }
 
-      const result = await req.pool.query(
-        `UPDATE lavori SET stato = $1 WHERE id = $2 RETURNING *`,
-        [stato, id],
-      );
+      const updated = await withTx(req.pool, async (client) => {
+        const before = await client.query<{ stato: string }>(
+          `SELECT stato FROM lavori WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+          [id],
+        );
+        const prev = before.rows[0];
+        if (!prev) return null;
 
-      await logAudit(req.pool, {
-        idOperatore: req.user!.id,
-        azione: 'CAMBIO_STATO_LAVORO',
-        entita: 'lavori',
-        idEntita: id,
-        dettagli: { da: prev.stato, a: stato },
+        const result = await client.query(
+          `UPDATE lavori SET stato = $1 WHERE id = $2 RETURNING *`,
+          [stato, id],
+        );
+        if (assignmentsProvided) {
+          const current = await client.query<{ id: number; id_collaboratore: number; mansione: string }>(
+            `SELECT id, id_collaboratore, mansione FROM lavori_assegnazioni
+             WHERE id_lavoro = $1 AND rimosso_at IS NULL FOR UPDATE`,
+            [id],
+          );
+          const currentKeys = new Set(current.rows.map((a) => `${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
+          const toRemove = current.rows.filter((a) => !desiredKeys.has(`${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
+          if (toRemove.length > 0) {
+            await client.query(
+              `UPDATE lavori_assegnazioni
+               SET rimosso_at = NOW(), id_operatore_rimozione = $1
+               WHERE id = ANY($2::bigint[])`,
+              [req.user!.id, toRemove.map((a) => a.id)],
+            );
+          }
+          for (const assignment of normalized) {
+            const key = `${assignment.id_collaboratore}:${assignment.mansione.toLocaleLowerCase('it')}`;
+            if (!currentKeys.has(key)) {
+              await client.query(
+                `INSERT INTO lavori_assegnazioni
+                   (id_lavoro, id_collaboratore, mansione, id_operatore_assegnazione)
+                 VALUES ($1,$2,$3,$4)`,
+                [id, assignment.id_collaboratore, assignment.mansione, req.user!.id],
+              );
+            }
+          }
+          await logAudit(client, {
+            idOperatore: req.user!.id,
+            azione: 'UPDATE_ASSEGNAZIONI_LAVORO',
+            entita: 'lavori',
+            idEntita: id,
+            dettagli: { attive: normalized.length, rimosse: toRemove.length },
+          });
+        }
+        await logAudit(client, {
+          idOperatore: req.user!.id,
+          azione: 'CAMBIO_STATO_LAVORO',
+          entita: 'lavori',
+          idEntita: id,
+          dettagli: { da: prev.stato, a: stato },
+        });
+        return result.rows[0];
       });
-
-      return result.rows[0];
+      if (!updated) return reply.code(404).send({ error: 'Lavoro non trovato' });
+      return updated;
     },
   );
 
   app.delete('/:id', { schema: { params: IdParams } }, async (req, reply) => {
     const { id } = req.params as { id: number };
-    const result = await req.pool.query(
-      `UPDATE lavori SET deleted_at = NOW()
-       WHERE id = $1 AND deleted_at IS NULL
-       RETURNING id`,
-      [id],
-    );
-    if (result.rowCount === 0) return reply.code(404).send({ error: 'Lavoro non trovato' });
-
-    await logAudit(req.pool, {
-      idOperatore: req.user!.id,
-      azione: 'DELETE_LAVORO',
-      entita: 'lavori',
-      idEntita: id,
+    const deleted = await withTx(req.pool, async (client) => {
+      const result = await client.query(
+        `UPDATE lavori SET deleted_at = NOW()
+         WHERE id = $1 AND deleted_at IS NULL
+         RETURNING id`,
+        [id],
+      );
+      if (result.rowCount === 0) return null;
+      const assignments = await client.query(
+        `UPDATE lavori_assegnazioni
+         SET rimosso_at = NOW(), id_operatore_rimozione = $1
+         WHERE id_lavoro = $2 AND rimosso_at IS NULL
+         RETURNING id`,
+        [req.user!.id, id],
+      );
+      await logAudit(client, {
+        idOperatore: req.user!.id,
+        azione: 'DELETE_LAVORO',
+        entita: 'lavori',
+        idEntita: id,
+        dettagli: { assegnazioni_chiuse: assignments.rowCount ?? 0 },
+      });
+      return true;
     });
+    if (!deleted) return reply.code(404).send({ error: 'Lavoro non trovato' });
     return { status: 'ok' };
   });
 
@@ -389,6 +524,92 @@ export async function lavoriRoutes(app: FastifyInstance) {
         [id],
       );
       return result.rows;
+    },
+  );
+
+  app.put(
+    '/:id/assegnazioni',
+    { schema: { params: IdParams, body: AssegnazioniBody } },
+    async (req, reply) => {
+      const { id } = req.params as { id: number };
+      const { assegnazioni } = req.body as {
+        assegnazioni: Array<{ id_collaboratore: number; mansione: string }>;
+      };
+      const desired = assegnazioni.map((a) => ({
+        id_collaboratore: a.id_collaboratore,
+        mansione: a.mansione.trim(),
+      }));
+      if (desired.some((a) => a.mansione.length === 0)) {
+        return reply.code(400).send({ error: 'La mansione non può essere vuota' });
+      }
+      const desiredKeys = new Set(desired.map((a) => `${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
+      if (desiredKeys.size !== desired.length) {
+        return reply.code(400).send({ error: 'La stessa assegnazione è presente più volte' });
+      }
+
+      const collaboratorIds = [...new Set(desired.map((a) => a.id_collaboratore))];
+      if (collaboratorIds.length > 0) {
+        const active = await req.pool.query<{ id: number }>(
+          `SELECT id FROM collaboratori WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL`,
+          [collaboratorIds],
+        );
+        if (active.rows.length !== collaboratorIds.length) {
+          return reply.code(400).send({ error: 'Uno o più collaboratori non sono disponibili' });
+        }
+      }
+
+      const rows = await withTx(req.pool, async (client) => {
+        const exists = await client.query(
+          `SELECT 1 FROM lavori WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+          [id],
+        );
+        if (exists.rowCount === 0) return null;
+        const current = await client.query<{ id: number; id_collaboratore: number; mansione: string }>(
+          `SELECT id, id_collaboratore, mansione FROM lavori_assegnazioni
+           WHERE id_lavoro = $1 AND rimosso_at IS NULL FOR UPDATE`,
+          [id],
+        );
+        const currentKeys = new Set(current.rows.map((a) => `${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
+        const toRemove = current.rows.filter((a) => !desiredKeys.has(`${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
+        if (toRemove.length > 0) {
+          await client.query(
+            `UPDATE lavori_assegnazioni
+             SET rimosso_at = NOW(), id_operatore_rimozione = $1
+             WHERE id = ANY($2::bigint[])`,
+            [req.user!.id, toRemove.map((a) => a.id)],
+          );
+        }
+        for (const assignment of desired) {
+          const key = `${assignment.id_collaboratore}:${assignment.mansione.toLocaleLowerCase('it')}`;
+          if (!currentKeys.has(key)) {
+            await client.query(
+              `INSERT INTO lavori_assegnazioni
+                 (id_lavoro, id_collaboratore, mansione, id_operatore_assegnazione)
+               VALUES ($1,$2,$3,$4)`,
+              [id, assignment.id_collaboratore, assignment.mansione, req.user!.id],
+            );
+          }
+        }
+        await logAudit(client, {
+          idOperatore: req.user!.id,
+          azione: 'UPDATE_ASSEGNAZIONI_LAVORO',
+          entita: 'lavori',
+          idEntita: id,
+          dettagli: { attive: desired.length, rimosse: toRemove.length },
+        });
+        const fresh = await client.query(
+          `SELECT a.id, a.id_collaboratore, c.nome AS collaboratore_nome,
+                  a.mansione, a.assegnato_at, a.rimosso_at
+           FROM lavori_assegnazioni a
+           JOIN collaboratori c ON c.id = a.id_collaboratore
+           WHERE a.id_lavoro = $1 AND a.rimosso_at IS NULL
+           ORDER BY a.assegnato_at DESC`,
+          [id],
+        );
+        return fresh.rows;
+      });
+      if (!rows) return reply.code(404).send({ error: 'Lavoro non trovato' });
+      return rows;
     },
   );
 

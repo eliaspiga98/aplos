@@ -81,12 +81,14 @@ aplos/
 │   │   ├── config.ts          # Env vars validate (required/optional)
 │   │   ├── audit.ts           # logAudit() — INSERT in audit_log
 │   │   ├── csv.ts             # Helper export CSV (deterministico, no libs)
-│   │   ├── validators.ts      # Validazione notazione FDI (numeri denti)
+│   │   ├── validators.ts      # Validazione FDI e scala colori VITA
+│   │   ├── maintenance-schedule.ts # Calcolo ricorrenze manutenzioni
 │   │   ├── auth/
 │   │   │   ├── guards.ts      # attachUser, requireAuth, requireAdmin
 │   │   │   └── types.ts       # FastifyRequest augmentation (req.user, req.pool)
 │   │   ├── db/
 │   │   │   ├── pool.ts        # main pool (max 10) + demo pool (max 5)
+│   │   │   ├── date-types.ts  # Parser DATE come YYYY-MM-DD senza fuso orario
 │   │   │   ├── readonly-pool.ts # readonly pool per modulo AI (max 3)
 │   │   │   ├── migrate.ts     # Runner SQL forward-only
 │   │   │   ├── seed.ts        # Seed minimale prod
@@ -102,7 +104,7 @@ aplos/
 │   │   │   ├── schema-description.ts # Schema DB in prosa per il prompt
 │   │   │   └── sql-guard.ts   # Validazione + sanitization SQL
 │   │   └── ...
-│   └── test/                  # node:test + tsx (266 righe totali)
+│   └── test/                  # node:test + tsx
 │
 ├── web/                       # Workspace npm "aplos/web" — frontend
 │   ├── src/
@@ -115,7 +117,7 @@ aplos/
 │   │   └── styles.css         # Stylesheet unico (2700 righe)
 │   └── public/
 │
-├── db/migrations/             # SQL forward-only numerato (4 migrations)
+├── db/migrations/             # SQL forward-only numerato
 ├── deploy/                    # systemd, nginx, plist launchd, runbook
 ├── scripts/                   # backup.sh, generate-cert.sh, install-mlx-server.sh
 ├── var/uploads/               # Storage allegati dev/mac (gitignored)
@@ -159,6 +161,10 @@ dalla root delegano ai workspace.
 | `0003_usa_demo.sql` | Colonna `operatori.usa_demo BOOLEAN` per indirizzare un operatore al DB demo invece del principale. |
 | `0004_app_settings.sql` | Tabella singleton `app_settings` (`CHECK (id = 1)`) per provider LLM, modello, URL Ollama/MLX. Modificabile da `/impostazioni` admin a runtime. |
 | `0005_qwen35_defaults.sql` | Porta i vecchi default AI a Qwen 3.5, preservando eventuali modelli scelti manualmente. |
+| `0006_database_backups.sql` | Impostazioni per backup pianificati, directory, retention ed esito ultima esecuzione. |
+| `0007_storage_and_language.sql` | Lingua dell'operatore e directory configurabili per configurazione/upload. |
+| `0008_collaboratori.sql` | Anagrafica collaboratori fisici e storico append-only delle assegnazioni a lavori, con mansione e date di presa/rimozione incarico. |
+| `0009_macchinari_manutenzioni.sql` | Anagrafica macchinari, manutenzioni singole/ricorrenti, storico interventi e lettura notifiche per operatore. |
 
 ### 4.3 Modello — entità principali
 
@@ -172,6 +178,17 @@ dalla root delegano ai workspace.
   scala_colori, tipologia_lavoro, note_istruzioni,
   id_operatore_creazione→operatori, ...)`
   con `CHECK (data_consegna >= data_entrata)`.
+- `collaboratori(...)` — persone che eseguono fisicamente i lavori in
+  laboratorio, separate dagli `operatori` che accedono al gestionale.
+- `lavori_assegnazioni(id_lavoro, id_collaboratore, mansione,
+  assegnato_at, rimosso_at, ...)` — storico degli incarichi. Le righe non
+  vengono cancellate: la rimozione chiude l'intervallo valorizzando
+  `rimosso_at`; lo stesso lavoro può avere più collaboratori e mansioni.
+- `macchinari(...)`, `manutenzioni_programmate(...)` e
+  `manutenzioni_interventi(...)` — inventario attrezzature, scadenze con
+  preavviso/ricorrenza e registro append-only degli interventi completati.
+- `manutenzioni_notifiche_lette(...)` — conferma per operatore e singola
+  occorrenza; preavviso e giorno di scadenza sono notifiche distinte.
 - `lavori_strutture(id_lavoro→lavori, tipo_struttura: corona_singola|ponte,
   elementi_dentali SMALLINT[])` con `CHECK` su lunghezza (>=1, =1 per
   corona singola, >=2 per ponte). Notazione FDI (11–48 permanenti,
@@ -198,8 +215,8 @@ dalla root delegano ai workspace.
 ### 4.4 DB demo opzionale
 
 Una `DEMO_DATABASE_URL` opzionale crea un secondo DB con stesso schema
-e seed ricco (25 lavori, 6 dottori, 15 materiali, 5 depositi, 2
-operatori demo). Lo stato `usa_demo` per operatore (vedi sopra) fa sì
+e seed ricco (lavori, dottori, materiali, depositi, collaboratori,
+assegnazioni, macchinari e manutenzioni). Lo stato `usa_demo` per operatore (vedi sopra) fa sì
 che il `preHandler` del server imposti `req.pool` sul pool demo invece
 di quello principale. Auth resta sempre sul DB principale. Switchabile
 senza riavvio.
@@ -288,6 +305,10 @@ Tre pool, scopi diversi:
 Il pool principale viene scelto per-request da un hook `onRequest`. Il
 pool readonly è hardcoded per il solo modulo AI (vedi §7).
 
+Il parser globale di `pg` mantiene le colonne PostgreSQL `DATE` come stringhe
+`YYYY-MM-DD`. In questo modo una data civile non viene convertita in un
+timestamp UTC e non può arretrare di un giorno durante la serializzazione JSON.
+
 Pattern transazione: `withTx(pool, async (client) => { … })` in
 `db/pool.ts` gestisce `BEGIN/COMMIT/ROLLBACK` con cleanup garantito.
 Usato per operazioni multi-tabella tipo creazione lavoro + strutture
@@ -304,7 +325,9 @@ schemi TypeBox. Risposte d'errore JSON `{ error: string }`.
 | `/api/auth` | `routes/auth.ts` | nessuna | login, logout, /me, /me/pin, lista operatori per dropdown |
 | `/api/operatori` | `routes/operatori.ts` | `requireAdmin` | CRUD operatori, toggle `usa_demo` |
 | `/api/dottori` | `routes/dottori.ts` | `requireAuth` | CRUD + stats per dottore + export CSV |
-| `/api/lavori` | `routes/lavori.ts` | `requireAuth` | CRUD lavori (con `lavori_strutture` atomico), registra consumo materiale, /stampa-dati, export CSV |
+| `/api/lavori` | `routes/lavori.ts` | `requireAuth` | CRUD lavori, strutture, cambio stato, assegnazioni collaboratori e relativo storico, consumo materiale, stampa/export |
+| `/api/collaboratori` | `routes/collaboratori.ts` | `requireAuth` | CRUD collaboratori, conteggio lavori assegnati, export CSV |
+| `/api/macchinari` | `routes/macchinari.ts` | `requireAuth` | CRUD macchinari, pianificazione/completamento manutenzioni e notifiche per operatore |
 | `/api/materiali` | `routes/materiali.ts` | `requireAuth` | CRUD materiali, export CSV |
 | `/api/depositi` | `routes/depositi.ts` | `requireAuth` | CRUD depositi |
 | `/api/lavori/:id/allegati` | `routes/allegati.ts` | `requireAuth` | Upload (multipart), lista, delete allegati |

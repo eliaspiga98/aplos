@@ -29,3 +29,15 @@ export function validateToothArray(elementi: number[]): string | null {
   }
   return null;
 }
+
+export const VITA_SHADES = [
+  'BL1', 'BL2', 'BL3',
+  'A1', 'A2', 'A3', 'A3.5', 'A4',
+  'B1', 'B2', 'B3', 'B4',
+  'C1', 'C2', 'C3', 'C4',
+  'D2', 'D3', 'D4',
+] as const;
+
+export function isVitaShade(value: string): boolean {
+  return (VITA_SHADES as readonly string[]).includes(value);
+}

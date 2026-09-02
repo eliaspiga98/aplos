@@ -3,10 +3,11 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { CambioPinModal } from './CambioPinModal';
 import { AiWidget } from './AiWidget';
+import { NotificheBell } from './NotificheBell';
 import { labelRuolo } from '../utils/format';
 import {
   IconHome, IconBriefcase, IconUserMd, IconBox, IconWarehouse,
-  IconUsers, IconLogout, IconKey, IconClock, IconSettings,
+  IconUsers, IconLogout, IconKey, IconClock, IconSettings, IconTool,
 } from './icons';
 
 interface NavItem {
@@ -22,6 +23,8 @@ const navItems: NavItem[] = [
   { to: '/lavori',     label: 'Lavori',     icon: IconBriefcase },
   { to: '/calendario', label: 'Calendario', icon: IconClock },
   { to: '/dottori',    label: 'Dottori',    icon: IconUserMd },
+  { to: '/collaboratori', label: 'Collaboratori', icon: IconUsers },
+  { to: '/macchinari', label: 'Macchinari', icon: IconTool },
   { to: '/materiali',  label: 'Materiali',  icon: IconBox },
   { to: '/depositi',   label: 'Depositi',   icon: IconWarehouse },
   { to: '/operatori',  label: 'Operatori',  icon: IconUsers, adminOnly: true },
@@ -88,7 +91,10 @@ export function Layout({ children }: { children: ReactNode }) {
           </button>
         </div>
       </aside>
-      <main className="content">{children}</main>
+      <main className="content">
+        <div className="content-topbar"><NotificheBell /></div>
+        {children}
+      </main>
       <CambioPinModal open={showPin} onClose={() => setShowPin(false)} />
       <AiWidget />
     </div>

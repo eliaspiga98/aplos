@@ -3,6 +3,9 @@ import { Modal } from './Modal';
 import { Odontogramma, type Struttura } from './Odontogramma';
 import { useToast } from './Toaster';
 import { api, ApiError, type Dottore, type Lavoro, type LavoroDettaglio } from '../api';
+import { addDaysDateInput, todayDateInput, toDateInputValue } from '../utils/format';
+import { DottoreFormModal } from './DottoreFormModal';
+import { VitaShadePicker } from './VitaShadePicker';
 
 interface Props {
   open: boolean;
@@ -11,37 +14,31 @@ interface Props {
   lavoro?: LavoroDettaglio | null;
 }
 
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+function initialForm() {
+  return {
+    id_dottore: '' as string | number,
+    nome_paziente: '',
+    data_entrata: todayDateInput(),
+    data_consegna: addDaysDateInput(7),
+    scala_colori: '',
+    tipologia_lavoro: '',
+    note_istruzioni: '',
+  };
 }
-function plusDaysISO(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-const initial = {
-  id_dottore: '' as string | number,
-  nome_paziente: '',
-  data_entrata: todayISO(),
-  data_consegna: plusDaysISO(7),
-  scala_colori: '',
-  tipologia_lavoro: '',
-  note_istruzioni: '',
-};
 
 export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
   const isEdit = !!lavoro;
-  const [form, setForm] = useState(initial);
+  const [form, setForm] = useState(initialForm);
   const [strutture, setStrutture] = useState<Struttura[]>([]);
   const [dottori, setDottori] = useState<Dottore[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showDoctorForm, setShowDoctorForm] = useState(false);
   const { push } = useToast();
 
   useEffect(() => {
     if (!open) return;
-    api.get<Dottore[]>('/api/dottori?limit=200').then(setDottori).catch(() => setDottori([]));
+    api.get<Dottore[]>('/api/dottori?limit=500').then(setDottori).catch(() => setDottori([]));
   }, [open]);
 
   // Quando entriamo in modalità edit pre-popoliamo il form.
@@ -50,8 +47,8 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
       setForm({
         id_dottore: lavoro.id_dottore,
         nome_paziente: lavoro.nome_paziente,
-        data_entrata: lavoro.data_entrata.slice(0, 10),
-        data_consegna: lavoro.data_consegna.slice(0, 10),
+        data_entrata: toDateInputValue(lavoro.data_entrata),
+        data_consegna: toDateInputValue(lavoro.data_consegna),
         scala_colori: lavoro.scala_colori ?? '',
         tipologia_lavoro: lavoro.tipologia_lavoro ?? '',
         note_istruzioni: lavoro.note_istruzioni ?? '',
@@ -63,7 +60,7 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
         })),
       );
     } else {
-      setForm(initial);
+      setForm(initialForm());
       setStrutture([]);
     }
     setError(null);
@@ -71,7 +68,7 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
 
   function close() {
     if (!isEdit) {
-      setForm(initial);
+      setForm(initialForm());
       setStrutture([]);
     }
     setError(null);
@@ -152,8 +149,11 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
         <section>
           <h3>Anagrafica</h3>
           <div className="form-grid form-grid--2">
-            <label>
-              Dottore*
+            <div className="form-field">
+              <div className="field-label-row">
+                <span>Dottore*</span>
+                <button type="button" className="btn-link" onClick={() => setShowDoctorForm(true)}>+ Nuovo dottore</button>
+              </div>
               <select
                 value={form.id_dottore}
                 onChange={(e) => setForm({ ...form, id_dottore: e.target.value })}
@@ -170,7 +170,7 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
               {dottori.length === 0 && (
                 <span className="muted">Nessun dottore. Crea prima un dottore.</span>
               )}
-            </label>
+            </div>
             <label>
               Paziente*
               <input
@@ -211,10 +211,9 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
           <div className="form-grid form-grid--2">
             <label>
               Scala colori
-              <input
-                placeholder="es. A2"
+              <VitaShadePicker
                 value={form.scala_colori}
-                onChange={(e) => setForm({ ...form, scala_colori: e.target.value })}
+                onChange={(scala_colori) => setForm({ ...form, scala_colori })}
               />
             </label>
             <label>
@@ -243,6 +242,15 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
 
         {error && <div className="error">{error}</div>}
       </form>
+      <DottoreFormModal
+        open={showDoctorForm}
+        onClose={() => setShowDoctorForm(false)}
+        onSaved={(doctor) => {
+          setDottori((current) => [...current.filter((d) => d.id !== doctor.id), doctor]
+            .sort((a, b) => a.nome.localeCompare(b.nome)));
+          setForm((current) => ({ ...current, id_dottore: doctor.id }));
+        }}
+      />
     </Modal>
   );
 }

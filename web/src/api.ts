@@ -177,6 +177,32 @@ export interface Lavoro {
   id_dottore: number;
   dottore_nome: string;
   dottore_studio: string | null;
+  assegnazioni: AssegnazioneLavoro[];
+}
+
+export interface Collaboratore {
+  id: number;
+  nome: string;
+  telefono: string | null;
+  email: string | null;
+  mansioni: string | null;
+  note: string | null;
+  lavori_attivi?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssegnazioneLavoro {
+  id: number;
+  id_collaboratore: number;
+  collaboratore_nome: string;
+  mansione: string;
+  assegnato_at: string;
+  rimosso_at?: string | null;
+  id_operatore_assegnazione?: number;
+  operatore_assegnazione_nome?: string | null;
+  id_operatore_rimozione?: number | null;
+  operatore_rimozione_nome?: string | null;
 }
 
 export interface Dottore {
@@ -224,6 +250,59 @@ export interface Deposito {
   updated_at: string;
 }
 
+export interface Macchinario {
+  id: number;
+  nome: string;
+  marca: string | null;
+  modello: string | null;
+  matricola: string | null;
+  ubicazione: string | null;
+  note: string | null;
+  manutenzioni_attive?: number;
+  prossima_manutenzione?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManutenzioneProgrammata {
+  id: number;
+  id_macchinario: number;
+  titolo: string;
+  descrizione: string | null;
+  prossima_scadenza: string;
+  preavviso_giorni: number;
+  ricorrenza_valore: number | null;
+  ricorrenza_unita: 'giorni' | 'mesi' | 'anni' | null;
+  attiva: boolean;
+  giorni?: number;
+}
+
+export interface InterventoManutenzione {
+  id: number;
+  id_manutenzione: number;
+  titolo: string;
+  scadenza_prevista: string;
+  completata_at: string;
+  note: string | null;
+  operatore_nome: string | null;
+}
+
+export interface MacchinarioDettaglio extends Macchinario {
+  manutenzioni: ManutenzioneProgrammata[];
+  interventi: InterventoManutenzione[];
+}
+
+export interface ManutenzioneAlert {
+  id: number;
+  id_macchinario: number;
+  titolo: string;
+  prossima_scadenza: string;
+  preavviso_giorni: number;
+  macchinario_nome: string;
+  giorni: number;
+  tipo: 'preavviso' | 'scadenza';
+}
+
 export interface StrutturaSalvata {
   id: number;
   tipo_struttura: 'corona_singola' | 'ponte';
@@ -257,6 +336,7 @@ export interface LavoroDettaglio extends Lavoro {
   strutture: StrutturaSalvata[];
   allegati: Allegato[];
   materiali: MaterialeConsumato[];
+  assegnazioni: AssegnazioneLavoro[];
 }
 
 export interface TimelineEvent {

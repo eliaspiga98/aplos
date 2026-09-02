@@ -5,8 +5,8 @@
  *   - 6 dottori
  *   - 15 materiali (varie categorie e stati)
  *   - 2 operatori demo (Admin Demo / Cliente Demo)
- *   - 25 lavori distribuiti per stato e date
- *   - strutture odontogramma + materiali consumati
+ *   - 35 lavori distribuiti per stato e date
+ *   - strutture, collaboratori assegnati, macchinari e manutenzioni
  *
  * Idempotente: prima TRUNCATE, poi INSERT.
  *
@@ -28,7 +28,7 @@ const today = new Date();
 function dateOffset(days: number): string {
   const d = new Date(today);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 function tsOffset(days: number, hour = 9, minute = 0): Date {
   const d = new Date(today);
@@ -49,12 +49,18 @@ async function main() {
       ALTER TABLE lavori_materiali DROP CONSTRAINT IF EXISTS lavori_materiali_id_operatore_fkey;
       ALTER TABLE lavori_allegati DROP CONSTRAINT IF EXISTS lavori_allegati_id_operatore_fkey;
       ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_log_id_operatore_fkey;
+      ALTER TABLE lavori_assegnazioni DROP CONSTRAINT IF EXISTS lavori_assegnazioni_id_operatore_assegnazione_fkey;
+      ALTER TABLE lavori_assegnazioni DROP CONSTRAINT IF EXISTS lavori_assegnazioni_id_operatore_rimozione_fkey;
+      ALTER TABLE manutenzioni_interventi DROP CONSTRAINT IF EXISTS manutenzioni_interventi_id_operatore_fkey;
+      ALTER TABLE manutenzioni_notifiche_lette DROP CONSTRAINT IF EXISTS manutenzioni_notifiche_lette_id_operatore_fkey;
     `);
 
     // 2. Truncate dati (lascia schema_migrations).
     await c.query(`
       TRUNCATE
         audit_log, lavori_allegati, lavori_materiali, lavori_strutture,
+        manutenzioni_notifiche_lette, manutenzioni_interventi, manutenzioni_programmate,
+        macchinari, lavori_assegnazioni, collaboratori,
         lavori, materiali, depositi, dottori, operatori
       RESTART IDENTITY CASCADE
     `);
@@ -68,6 +74,9 @@ async function main() {
          ('Tecnico Demo', 'tecnico', $1, true)`,
       [pinHash],
     );
+    // TRUNCATE operatori ... CASCADE svuota anche il singleton collegato
+    // app_settings: lo ricreiamo con i default correnti delle migrazioni.
+    await c.query(`INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`);
 
     // 4. Depositi
     await c.query(`
@@ -88,6 +97,14 @@ async function main() {
         ('Dr.ssa Giulia Romano',   'Romano Dental',             '081-4567890',  'g.romano@romanodental.it',        'Via Roma 33, Napoli',      '34567890123'),
         ('Dr. Luca Marini',        'Studio Marini',             '051-5678901',  'marini@marinismile.it',           'Via Indipendenza 56, Bologna','45678901234'),
         ('Dr. Paolo Conti',        'Conti Smile Center',        '055-6789012',  'p.conti@contismile.it',           'Piazza Duomo 8, Firenze',  '56789012345')
+    `);
+
+    await c.query(`
+      INSERT INTO collaboratori (nome, telefono, email, mansioni, note) VALUES
+        ('Elia Spiga',      '333-1000001', 'elia@laboratorio.demo',   'CAD, progettazione', 'Responsabile flusso digitale'),
+        ('Marta Colombo',   '333-1000002', 'marta@laboratorio.demo',  'Rifinitura, lucidatura', NULL),
+        ('Davide Ferri',    '333-1000003', 'davide@laboratorio.demo', 'Ceramica, stratificazione', NULL),
+        ('Giulia Sartori',  '333-1000004', 'giulia@laboratorio.demo', 'Fresatura, controllo qualità', NULL)
     `);
 
     // 6. Materiali
@@ -248,6 +265,23 @@ async function main() {
 
       // Consumo materiale (in_corso, in_prova, finito).
       if (l.stato !== 'in_attesa') {
+        const idCollaboratore = ((idLavoro - 1) % 4) + 1;
+        await c.query(
+          `INSERT INTO lavori_assegnazioni
+             (id_lavoro, id_collaboratore, mansione, assegnato_at, id_operatore_assegnazione)
+           VALUES ($1,$2,'CAD',$3,$4)`,
+          [idLavoro, idCollaboratore, tsOffset(giornoInCorso, 10, 15), operatoreCreazione],
+        );
+        if (l.stato === 'in_prova' || l.stato === 'finito') {
+          const secondo = (idCollaboratore % 4) + 1;
+          await c.query(
+            `INSERT INTO lavori_assegnazioni
+               (id_lavoro, id_collaboratore, mansione, assegnato_at, id_operatore_assegnazione)
+             VALUES ($1,$2,'Rifinitura',$3,$4)`,
+            [idLavoro, secondo, tsOffset(giornoInProva - 1, 9, 0), operatoreCreazione],
+          );
+        }
+
         const idMaterialeMap: Record<string, number> = {
           A1: 1, A2: 2, A3: 3, BL2: 4, B1: 5,
         };
@@ -287,6 +321,28 @@ async function main() {
         );
       }
     }
+
+    await c.query(`
+      INSERT INTO macchinari (nome, marca, modello, matricola, ubicazione, note) VALUES
+        ('Fresatore principale', 'imes-icore', 'CORiTEC 350i', 'DEMO-350-01', 'Sala fresatura', 'Pulizia mandrino giornaliera'),
+        ('Forno sinterizzazione', 'VITA', 'ZYRCOMAT 6000 MS', 'DEMO-ZYR-02', 'Sala forni', NULL),
+        ('Stampante 3D', 'Formlabs', 'Form 4B', 'DEMO-F4B-03', 'Area digitale', 'Usare solo resine certificate')
+    `);
+    await c.query(
+      `INSERT INTO manutenzioni_programmate
+         (id_macchinario, titolo, descrizione, prossima_scadenza, preavviso_giorni, ricorrenza_valore, ricorrenza_unita)
+       VALUES
+         (1, 'Pulizia mandrino', 'Pulizia e lubrificazione completa', $1, 3, 30, 'giorni'),
+         (2, 'Calibrazione temperatura', 'Controllo con termocoppia certificata', $2, 7, 6, 'mesi'),
+         (3, 'Sostituzione filtro aria', 'Sostituire filtro e verificare aspirazione', $3, 5, 3, 'mesi')`,
+      [dateOffset(0), dateOffset(5), dateOffset(30)],
+    );
+    await c.query(
+      `INSERT INTO manutenzioni_interventi
+         (id_manutenzione, scadenza_prevista, completata_at, note, id_operatore)
+       VALUES (1, $1, $2, 'Pulizia completata senza anomalie', 1)`,
+      [dateOffset(-30), tsOffset(-30, 8, 30)],
+    );
 
     await c.query('COMMIT');
 
