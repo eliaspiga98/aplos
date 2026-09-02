@@ -71,6 +71,10 @@ const EN: Record<string, string> = {
   'Materiali': 'Materials',
   'Materiale': 'Material',
   'Nuovo materiale': 'New material',
+  'Materiali del lavoro': 'Job materials',
+  'Materiali utilizzati': 'Materials used',
+  'Aggiungi materiale': 'Add material',
+  'Registra utilizzo': 'Record usage',
   'Depositi': 'Storage locations',
   'Deposito': 'Storage location',
   'Nuovo deposito': 'New storage location',
@@ -100,6 +104,7 @@ const EN: Record<string, string> = {
   'Annulla': 'Cancel',
   'Crea': 'Create',
   'Elimina': 'Delete',
+  'Archivia': 'Archive',
   'Conferma': 'Confirm',
   'Chiudi': 'Close',
   'Scarica': 'Download',
@@ -183,8 +188,10 @@ const EN: Record<string, string> = {
   'finito': 'finished',
   'Finiti': 'Finished',
   'Nuovo': 'New',
+  'Nuovi': 'New',
   'nuovo': 'new',
   'Parziale': 'Partially used',
+  'Parziali': 'Partially used',
   'parziale': 'partially used',
   'Esaurito': 'Depleted',
   'esaurito': 'depleted',
@@ -193,6 +200,22 @@ const EN: Record<string, string> = {
   'Colore': 'Shade',
   'Lotto': 'Batch',
   'Quantità': 'Quantity',
+  'Quantità nuova': 'New quantity',
+  'Quantità nuova*': 'New quantity*',
+  'Quantità parziale': 'Partially used quantity',
+  'Quantità utilizzata*': 'Quantity used*',
+  'Unità di misura': 'Unit of measure',
+  'Misura': 'Size',
+  'Disponibilità': 'Availability',
+  'Azioni': 'Actions',
+  'Materiale disponibile*': 'Available material*',
+  'Deposito*': 'Storage location*',
+  'Stato calcolato': 'Calculated status',
+  'Prelievo': 'Stock type',
+  'Già registrati': 'Already recorded',
+  'Da aggiungere al salvataggio': 'To add when saving',
+  'Rimuovi': 'Remove',
+  'Storico': 'History',
   'Unità': 'Unit',
   'Soglia': 'Threshold',
   'Altezza (mm)': 'Height (mm)',
@@ -343,6 +366,8 @@ const EN: Record<string, string> = {
   'Identificazione': 'Identification',
   'Stato e alert': 'Status and alerts',
   '— seleziona —': '— select —',
+  '— seleziona deposito —': '— select storage location —',
+  '— seleziona materiale —': '— select material —',
   '— nessuno —': '— none —',
   'Nessun dottore. Crea prima un dottore.': 'No doctors. Create a doctor first.',
   'Crea prima un deposito dalla pagina dedicata.': 'Create a storage location from its page first.',
@@ -382,6 +407,8 @@ export function translateText(value: string, language: Language): string {
       .replace(/^Lavoro #(\d+) eliminato$/, 'Job #$1 deleted')
       .replace(/^Allegato "(.+)" caricato$/, 'Attachment "$1" uploaded')
       .replace(/^Materiale (.+) lotto (.+) creato$/, 'Material $1 batch $2 created')
+      .replace(/^Materiale lotto (.+) aggiornato$/, 'Material batch $1 updated')
+      .replace(/^Materiale lotto (.+) archiviato$/, 'Material batch $1 archived')
       .replace(/^Impossibile eliminare: il deposito contiene (\d+) materiali attivi\.$/, 'Cannot delete: the storage location contains $1 active materials.');
   }
   return leading + translated + trailing;

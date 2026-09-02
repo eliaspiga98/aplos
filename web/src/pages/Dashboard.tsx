@@ -20,7 +20,7 @@ const LAYOUT_STORAGE_PREFIX = 'aplos:dashboard:v2';
 function isSottoSoglia(m: Materiale): boolean {
   if (!m.soglia_alert) return false;
   const soglia = Number(m.soglia_alert);
-  const q = m.quantita ? Number(m.quantita) : 0;
+  const q = Number(m.quantita) + Number(m.quantita_parziale);
   return q <= soglia;
 }
 
@@ -176,7 +176,12 @@ function MagazzinoWidget({ materiali, loading, navigate }: BoardData) {
                   <div className="material-alert-status">
                     {m.stato_utilizzo === 'esaurito'
                       ? <span className="stato-pill stato-pill--esaurito">Esaurito</span>
-                      : <span className="muted">{m.quantita} {m.unita_misura ?? ''} / {m.soglia_alert}</span>}
+                      : (
+                        <span className="muted">
+                          {Number(m.quantita) + Number(m.quantita_parziale)} {m.unita_misura ?? ''}
+                          {' '}/ {m.soglia_alert}
+                        </span>
+                      )}
                   </div>
                 </li>
               ))}

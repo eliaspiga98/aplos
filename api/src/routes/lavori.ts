@@ -6,6 +6,10 @@ import { logAudit } from '../audit.js';
 import { requireAuth } from '../auth/guards.js';
 import { isVitaShade, validateToothArray } from '../validators.js';
 import { rowsToCsv, csvFilename } from '../csv.js';
+import {
+  registerMaterialUsage,
+  type MaterialUsageInput,
+} from '../material-usage.js';
 
 const StatoLavoro = Type.Union([
   Type.Literal('in_attesa'),
@@ -29,6 +33,16 @@ const AssegnazioneInput = Type.Object({
   mansione: Type.String({ minLength: 1, maxLength: 120 }),
 });
 
+const MaterialUsageInputBody = Type.Object({
+  id_materiale: Type.Integer({ minimum: 1 }),
+  stato_prelievo: Type.Optional(Type.Union([
+    Type.Literal('nuovo'),
+    Type.Literal('parziale'),
+  ])),
+  quantita_usata: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+  note: Type.Optional(Type.String({ maxLength: 500 })),
+});
+
 const CreateBody = Type.Object({
   id_dottore: Type.Integer({ minimum: 1 }),
   nome_paziente: Type.String({ minLength: 1, maxLength: 200 }),
@@ -39,6 +53,7 @@ const CreateBody = Type.Object({
   tipologia_lavoro: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   note_istruzioni: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   strutture: Type.Optional(Type.Array(Struttura)),
+  materiali: Type.Optional(Type.Array(MaterialUsageInputBody, { maxItems: 50 })),
 });
 
 const UpdateBody = Type.Partial(
@@ -66,12 +81,7 @@ const AssegnazioniBody = Type.Object({
   assegnazioni: Type.Array(AssegnazioneInput, { maxItems: 20 }),
 });
 
-const RegistraMaterialeBody = Type.Object({
-  id_materiale: Type.Integer({ minimum: 1 }),
-  quantita_usata: Type.Optional(Type.Number({ minimum: 0 })),
-  unita_misura: Type.Optional(Type.String()),
-  note: Type.Optional(Type.String()),
-});
+const RegistraMaterialeBody = MaterialUsageInputBody;
 
 export async function lavoriRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireAuth);
@@ -222,9 +232,12 @@ export async function lavoriRoutes(app: FastifyInstance) {
       ),
       req.pool.query(
         `SELECT lm.id, lm.quantita_usata, lm.unita_misura, lm.note, lm.created_at,
-                m.id AS id_materiale, m.categoria, m.lotto, m.marca, m.colore
+                lm.stato_prelievo,
+                m.id AS id_materiale, m.categoria, m.lotto, m.marca, m.colore,
+                d.nome AS deposito_nome
          FROM lavori_materiali lm
          JOIN materiali m ON m.id = lm.id_materiale
+         LEFT JOIN depositi d ON d.id = m.id_deposito
          WHERE lm.id_lavoro = $1
          ORDER BY lm.created_at DESC`,
         [id],
@@ -264,6 +277,7 @@ export async function lavoriRoutes(app: FastifyInstance) {
       tipologia_lavoro?: string | null;
       note_istruzioni?: string | null;
       strutture?: Array<{ tipo_struttura: string; elementi_dentali: number[] }>;
+      materiali?: MaterialUsageInput[];
     };
 
     const shade = b.scala_colori?.trim() || null;
@@ -308,15 +322,39 @@ export async function lavoriRoutes(app: FastifyInstance) {
           );
         }
       }
-      return lavoro;
-    });
 
-    await logAudit(req.pool, {
-      idOperatore: req.user!.id,
-      azione: 'CREATE_LAVORO',
-      entita: 'lavori',
-      idEntita: created.id as number,
-      dettagli: { paziente: created.nome_paziente as string, n_strutture: b.strutture?.length ?? 0 },
+      for (const material of b.materiali ?? []) {
+        const usage = await registerMaterialUsage(client, {
+          ...material,
+          id_lavoro: Number(lavoro.id),
+          id_operatore: req.user!.id,
+        });
+        await logAudit(client, {
+          idOperatore: req.user!.id,
+          azione: 'REGISTRA_MATERIALE',
+          entita: 'lavori_materiali',
+          idEntita: Number(usage.id),
+          dettagli: {
+            id_lavoro: Number(lavoro.id),
+            id_materiale: material.id_materiale,
+            stato_prelievo: usage.stato_prelievo ?? null,
+            quantita: usage.quantita_usata ?? 1,
+          },
+        });
+      }
+
+      await logAudit(client, {
+        idOperatore: req.user!.id,
+        azione: 'CREATE_LAVORO',
+        entita: 'lavori',
+        idEntita: Number(lavoro.id),
+        dettagli: {
+          paziente: String(lavoro.nome_paziente),
+          n_strutture: b.strutture?.length ?? 0,
+          n_materiali: b.materiali?.length ?? 0,
+        },
+      });
+      return lavoro;
     });
 
     return reply.code(201).send(created);
@@ -328,8 +366,11 @@ export async function lavoriRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: number };
       const body = req.body as Record<string, unknown>;
+      const nuoviMateriali = (body.materiali ?? []) as MaterialUsageInput[];
       const keys = UPDATE_KEYS.filter((key) => body[key] !== undefined);
-      if (keys.length === 0) return reply.code(400).send({ error: 'Nessun campo da aggiornare' });
+      if (keys.length === 0 && nuoviMateriali.length === 0) {
+        return reply.code(400).send({ error: 'Nessun campo da aggiornare' });
+      }
 
       if (typeof body.scala_colori === 'string') {
         body.scala_colori = body.scala_colori.trim() || null;
@@ -345,26 +386,57 @@ export async function lavoriRoutes(app: FastifyInstance) {
         }
       }
 
-      const setSql = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
-      const values = keys.map((k) => body[k]);
-      values.push(id);
+      const updated = await withTx(req.pool, async (client) => {
+        const before = await client.query(
+          `SELECT * FROM lavori WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+          [id],
+        );
+        if (!before.rows[0]) return null;
 
-      const result = await req.pool.query(
-        `UPDATE lavori SET ${setSql}
-         WHERE id = $${keys.length + 1} AND deleted_at IS NULL
-         RETURNING *`,
-        values,
-      );
-      const updated = result.rows[0];
-      if (!updated) return reply.code(404).send({ error: 'Lavoro non trovato' });
+        let lavoro = before.rows[0];
+        if (keys.length > 0) {
+          const setSql = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+          const values = keys.map((k) => body[k]);
+          values.push(id);
+          const result = await client.query(
+            `UPDATE lavori SET ${setSql}
+             WHERE id = $${keys.length + 1}
+             RETURNING *`,
+            values,
+          );
+          lavoro = result.rows[0];
+        }
 
-      await logAudit(req.pool, {
-        idOperatore: req.user!.id,
-        azione: 'UPDATE_LAVORO',
-        entita: 'lavori',
-        idEntita: updated.id,
-        dettagli: { campi: keys },
+        for (const material of nuoviMateriali) {
+          const usage = await registerMaterialUsage(client, {
+            ...material,
+            id_lavoro: id,
+            id_operatore: req.user!.id,
+          });
+          await logAudit(client, {
+            idOperatore: req.user!.id,
+            azione: 'REGISTRA_MATERIALE',
+            entita: 'lavori_materiali',
+            idEntita: Number(usage.id),
+            dettagli: {
+              id_lavoro: id,
+              id_materiale: material.id_materiale,
+              stato_prelievo: usage.stato_prelievo ?? null,
+              quantita: usage.quantita_usata ?? 1,
+            },
+          });
+        }
+
+        await logAudit(client, {
+          idOperatore: req.user!.id,
+          azione: 'UPDATE_LAVORO',
+          entita: 'lavori',
+          idEntita: id,
+          dettagli: { campi: keys, materiali_aggiunti: nuoviMateriali.length },
+        });
+        return lavoro;
       });
+      if (!updated) return reply.code(404).send({ error: 'Lavoro non trovato' });
 
       return updated;
     },
@@ -692,38 +764,37 @@ export async function lavoriRoutes(app: FastifyInstance) {
     { schema: { params: IdParams, body: RegistraMaterialeBody } },
     async (req, reply) => {
       const { id } = req.params as { id: number };
-      const b = req.body as {
-        id_materiale: number;
-        quantita_usata?: number;
-        unita_misura?: string;
-        note?: string;
-      };
+      const b = req.body as MaterialUsageInput;
 
-      const lavoroExists = await req.pool.query(
-        `SELECT 1 FROM lavori WHERE id = $1 AND deleted_at IS NULL`,
-        [id],
-      );
-      if (lavoroExists.rowCount === 0) {
-        return reply.code(404).send({ error: 'Lavoro non trovato' });
-      }
+      const usage = await withTx(req.pool, async (client) => {
+        const lavoroExists = await client.query(
+          `SELECT 1 FROM lavori WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+          [id],
+        );
+        if (lavoroExists.rowCount === 0) return null;
 
-      const result = await req.pool.query(
-        `INSERT INTO lavori_materiali
-           (id_lavoro, id_materiale, quantita_usata, unita_misura, note, id_operatore)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
-        [id, b.id_materiale, b.quantita_usata ?? null, b.unita_misura ?? null, b.note ?? null, req.user!.id],
-      );
-
-      await logAudit(req.pool, {
-        idOperatore: req.user!.id,
-        azione: 'REGISTRA_MATERIALE',
-        entita: 'lavori_materiali',
-        idEntita: result.rows[0].id,
-        dettagli: { id_lavoro: id, id_materiale: b.id_materiale },
+        const created = await registerMaterialUsage(client, {
+          ...b,
+          id_lavoro: id,
+          id_operatore: req.user!.id,
+        });
+        await logAudit(client, {
+          idOperatore: req.user!.id,
+          azione: 'REGISTRA_MATERIALE',
+          entita: 'lavori_materiali',
+          idEntita: Number(created.id),
+          dettagli: {
+            id_lavoro: id,
+            id_materiale: b.id_materiale,
+            stato_prelievo: created.stato_prelievo ?? null,
+            quantita: created.quantita_usata ?? 1,
+          },
+        });
+        return created;
       });
+      if (!usage) return reply.code(404).send({ error: 'Lavoro non trovato' });
 
-      return reply.code(201).send(result.rows[0]);
+      return reply.code(201).send(usage);
     },
   );
 }

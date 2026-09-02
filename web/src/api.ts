@@ -221,6 +221,7 @@ export type CategoriaMateriale =
   | 'zirconio' | 'pmma' | 'resina' | 'metallo' | 'ceramica' | 'altro';
 
 export type StatoUtilizzo = 'nuovo' | 'parziale' | 'esaurito';
+export type StatoPrelievoMateriale = 'nuovo' | 'parziale';
 
 export type StatoLavoro = 'in_attesa' | 'in_corso' | 'in_prova' | 'finito';
 
@@ -236,7 +237,9 @@ export interface Materiale {
   stato_utilizzo: StatoUtilizzo;
   altezza_mm: string | null;
   larghezza_mm: string | null;
-  quantita: string | null;
+  /** Disponibilita ancora nuova/non aperta. */
+  quantita: string;
+  quantita_parziale: string;
   unita_misura: string | null;
   soglia_alert: string | null;
 }
@@ -316,10 +319,19 @@ export interface MaterialeConsumato {
   lotto: string;
   marca: string | null;
   colore: string | null;
+  deposito_nome: string | null;
   quantita_usata: string | null;
   unita_misura: string | null;
+  stato_prelievo: StatoPrelievoMateriale | null;
   note: string | null;
   created_at: string;
+}
+
+export interface MaterialUsageInput {
+  id_materiale: number;
+  stato_prelievo: StatoPrelievoMateriale;
+  quantita_usata: number;
+  note?: string;
 }
 
 export interface Allegato {

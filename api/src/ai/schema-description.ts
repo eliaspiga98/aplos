@@ -37,11 +37,13 @@ lavori_strutture(id, id_lavoro, tipo_struttura, elementi_dentali)
   elementi_dentali: SMALLINT[]  -- numeri denti FDI 11..48 (permanenti) e 51..85 (decidui)
   id_lavoro -> lavori(id)
 
-materiali(id, categoria, sottotipo, marca, colore, lotto, deposito, altezza_mm, larghezza_mm, quantita, unita_misura, stato_utilizzo, soglia_alert, deleted_at, created_at, updated_at)
+materiali(id, categoria, sottotipo, marca, colore, lotto, deposito_legacy, id_deposito, altezza_mm, larghezza_mm, quantita, quantita_parziale, unita_misura, stato_utilizzo, soglia_alert, deleted_at, created_at, updated_at)
   categoria: 'zirconio' | 'pmma' | 'resina' | 'metallo' | 'ceramica' | 'altro'
   stato_utilizzo: 'nuovo' | 'parziale' | 'esaurito'
+  quantita: disponibilita nuova/non aperta
+  quantita_parziale: disponibilita gia aperta e riutilizzabile
 
-lavori_materiali(id, id_lavoro, id_materiale, quantita_usata, unita_misura, note, id_operatore, created_at)
+lavori_materiali(id, id_lavoro, id_materiale, quantita_usata, unita_misura, note, id_operatore, stato_prelievo, created_at)
   Tracciabilità MDR: registra quale lotto è stato usato su quale lavoro.
 
 lavori_allegati(id, id_lavoro, nome_file, mime_type, size_bytes, created_at)

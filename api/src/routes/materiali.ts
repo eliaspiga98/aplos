@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
 
-import { pool } from '../db/pool.js';
+import { withTx } from '../db/pool.js';
 import { logAudit } from '../audit.js';
 import { requireAuth } from '../auth/guards.js';
 import { rowsToCsv, csvFilename } from '../csv.js';
+import { materialState } from '../material-inventory.js';
 
 const Categoria = Type.Union([
   Type.Literal('zirconio'),
@@ -22,7 +23,10 @@ const StatoUtilizzo = Type.Union([
 ]);
 
 const NullableStr = Type.Optional(Type.Union([Type.String(), Type.Null()]));
-const NullableNum = Type.Optional(Type.Union([Type.Number(), Type.Null()]));
+const NullableNonNegativeNum = Type.Optional(Type.Union([
+  Type.Number({ minimum: 0 }),
+  Type.Null(),
+]));
 
 const CreateBody = Type.Object({
   categoria: Categoria,
@@ -31,12 +35,13 @@ const CreateBody = Type.Object({
   colore: NullableStr,
   lotto: Type.String({ minLength: 1, maxLength: 100 }),
   id_deposito: Type.Optional(Type.Union([Type.Integer({ minimum: 1 }), Type.Null()])),
-  altezza_mm: NullableNum,
-  larghezza_mm: NullableNum,
-  quantita: NullableNum,
+  altezza_mm: NullableNonNegativeNum,
+  larghezza_mm: NullableNonNegativeNum,
+  quantita: NullableNonNegativeNum,
+  quantita_parziale: NullableNonNegativeNum,
   unita_misura: NullableStr,
   stato_utilizzo: Type.Optional(StatoUtilizzo),
-  soglia_alert: NullableNum,
+  soglia_alert: NullableNonNegativeNum,
   attributi_extra: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 });
 
@@ -54,9 +59,41 @@ const IdParams = Type.Object({ id: Type.Integer({ minimum: 1 }) });
 
 const FIELDS = [
   'categoria', 'sottotipo', 'marca', 'colore', 'lotto', 'id_deposito',
-  'altezza_mm', 'larghezza_mm', 'quantita', 'unita_misura',
+  'altezza_mm', 'larghezza_mm', 'quantita', 'quantita_parziale', 'unita_misura',
   'stato_utilizzo', 'soglia_alert', 'attributi_extra',
 ] as const;
+
+function normalizedInventory(
+  body: Record<string, unknown>,
+  current: { quantita: string | number | null; quantita_parziale: string | number | null },
+) {
+  let quantitaNuova = body.quantita !== undefined
+    ? Number(body.quantita ?? 0)
+    : Number(current.quantita ?? 0);
+  let quantitaParziale = body.quantita_parziale !== undefined
+    ? Number(body.quantita_parziale ?? 0)
+    : Number(current.quantita_parziale ?? 0);
+
+  // Compatibilita con i client precedenti che modificavano direttamente lo
+  // stato. Nel nuovo flusso lo stato e sempre derivato dalle disponibilita.
+  if (body.stato_utilizzo === 'esaurito') {
+    quantitaNuova = 0;
+    quantitaParziale = 0;
+  } else if (body.stato_utilizzo === 'nuovo') {
+    quantitaNuova += quantitaParziale;
+    quantitaParziale = 0;
+  } else if (body.stato_utilizzo === 'parziale' && quantitaParziale === 0 && quantitaNuova > 0) {
+    const aperta = Math.min(1, quantitaNuova);
+    quantitaNuova -= aperta;
+    quantitaParziale = aperta;
+  }
+
+  return {
+    quantita: quantitaNuova,
+    quantita_parziale: quantitaParziale,
+    stato_utilizzo: materialState(quantitaNuova, quantitaParziale),
+  };
+}
 
 export async function materialiRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireAuth);
@@ -120,7 +157,7 @@ export async function materialiRoutes(app: FastifyInstance) {
     const result = await req.pool.query<Record<string, unknown>>(
       `SELECT m.id, m.categoria, m.sottotipo, m.marca, m.colore, m.lotto,
               d.nome AS deposito,
-              m.altezza_mm, m.larghezza_mm, m.quantita, m.unita_misura,
+              m.altezza_mm, m.larghezza_mm, m.quantita, m.quantita_parziale, m.unita_misura,
               m.stato_utilizzo, m.soglia_alert
        FROM materiali m
        LEFT JOIN depositi d ON d.id = m.id_deposito AND d.deleted_at IS NULL
@@ -129,9 +166,11 @@ export async function materialiRoutes(app: FastifyInstance) {
       params,
     );
     const cols = ['id', 'categoria', 'sottotipo', 'marca', 'colore', 'lotto', 'deposito',
-                  'altezza_mm', 'larghezza_mm', 'quantita', 'unita_misura', 'stato_utilizzo', 'soglia_alert'];
+                  'altezza_mm', 'larghezza_mm', 'quantita', 'quantita_parziale',
+                  'unita_misura', 'stato_utilizzo', 'soglia_alert'];
     const headers = ['ID', 'Categoria', 'Sottotipo', 'Marca', 'Colore', 'Lotto', 'Deposito',
-                     'Altezza (mm)', 'Larghezza (mm)', 'Quantità', 'Unità', 'Stato', 'Soglia'];
+                     'Altezza (mm)', 'Larghezza (mm)', 'Quantità nuova', 'Quantità parziale',
+                     'Unità', 'Stato', 'Soglia'];
     reply
       .header('Content-Type', 'text/csv; charset=utf-8')
       .header('Content-Disposition', `attachment; filename="${csvFilename('materiali')}"`)
@@ -154,6 +193,7 @@ export async function materialiRoutes(app: FastifyInstance) {
 
   app.post('/', { schema: { body: CreateBody } }, async (req, reply) => {
     const b = req.body as Record<string, unknown>;
+    Object.assign(b, normalizedInventory(b, { quantita: 0, quantita_parziale: 0 }));
 
     const cols = FIELDS.filter((f) => b[f] !== undefined);
     const values = cols.map((f) => (f === 'attributi_extra' ? JSON.stringify(b[f] ?? {}) : b[f] ?? null));
@@ -185,20 +225,36 @@ export async function materialiRoutes(app: FastifyInstance) {
       const { id } = req.params as { id: number };
       const b = req.body as Record<string, unknown>;
 
-      const cols = FIELDS.filter((f) => b[f] !== undefined);
-      if (cols.length === 0) return reply.code(400).send({ error: 'Nessun campo da aggiornare' });
+      const requestedCols = FIELDS.filter((f) => b[f] !== undefined);
+      if (requestedCols.length === 0) return reply.code(400).send({ error: 'Nessun campo da aggiornare' });
 
-      const values = cols.map((f) => (f === 'attributi_extra' ? JSON.stringify(b[f]) : b[f]));
-      const setSql = cols.map((c, i) => `${c} = $${i + 1}`).join(', ');
-      values.push(id);
+      const updated = await withTx(req.pool, async (client) => {
+        const currentResult = await client.query<{
+          quantita: string;
+          quantita_parziale: string;
+        }>(
+          `SELECT quantita, quantita_parziale
+           FROM materiali
+           WHERE id = $1 AND deleted_at IS NULL
+           FOR UPDATE`,
+          [id],
+        );
+        const current = currentResult.rows[0];
+        if (!current) return null;
 
-      const result = await req.pool.query(
-        `UPDATE materiali SET ${setSql}
-         WHERE id = $${cols.length + 1} AND deleted_at IS NULL
-         RETURNING *`,
-        values,
-      );
-      const updated = result.rows[0];
+        Object.assign(b, normalizedInventory(b, current));
+        const cols = FIELDS.filter((f) => b[f] !== undefined);
+        const values = cols.map((f) => (f === 'attributi_extra' ? JSON.stringify(b[f]) : b[f]));
+        const setSql = cols.map((c, i) => `${c} = $${i + 1}`).join(', ');
+        values.push(id);
+        const result = await client.query(
+          `UPDATE materiali SET ${setSql}
+           WHERE id = $${cols.length + 1} AND deleted_at IS NULL
+           RETURNING *`,
+          values,
+        );
+        return result.rows[0] ?? null;
+      });
       if (!updated) return reply.code(404).send({ error: 'Materiale non trovato' });
 
       await logAudit(req.pool, {
@@ -206,7 +262,7 @@ export async function materialiRoutes(app: FastifyInstance) {
         azione: 'UPDATE_MATERIALE',
         entita: 'materiali',
         idEntita: updated.id,
-        dettagli: { campi: cols },
+        dettagli: { campi: requestedCols },
       });
 
       return updated;

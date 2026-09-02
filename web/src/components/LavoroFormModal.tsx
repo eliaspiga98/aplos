@@ -1,9 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Modal } from './Modal';
 import { Odontogramma, type Struttura } from './Odontogramma';
+import { MaterialUsagePicker } from './MaterialUsagePicker';
 import { useToast } from './Toaster';
-import { api, ApiError, type Dottore, type Lavoro, type LavoroDettaglio } from '../api';
-import { addDaysDateInput, todayDateInput, toDateInputValue } from '../utils/format';
+import {
+  api,
+  ApiError,
+  type Dottore,
+  type Lavoro,
+  type LavoroDettaglio,
+  type Materiale,
+  type MaterialUsageInput,
+} from '../api';
+import { addDaysDateInput, labelCategoria, todayDateInput, toDateInputValue } from '../utils/format';
 import { DottoreFormModal } from './DottoreFormModal';
 import { VitaShadePicker } from './VitaShadePicker';
 
@@ -34,6 +43,10 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showDoctorForm, setShowDoctorForm] = useState(false);
+  const [materialiDaAggiungere, setMaterialiDaAggiungere] = useState<Array<{
+    usage: MaterialUsageInput;
+    material: Materiale;
+  }>>([]);
   const { push } = useToast();
 
   useEffect(() => {
@@ -63,6 +76,7 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
       setForm(initialForm());
       setStrutture([]);
     }
+    setMaterialiDaAggiungere([]);
     setError(null);
   }, [lavoro, open]);
 
@@ -73,6 +87,7 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
     }
     setError(null);
     setSubmitting(false);
+    setMaterialiDaAggiungere([]);
     onClose();
   }
 
@@ -102,13 +117,19 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
 
       let saved: Lavoro;
       if (isEdit && lavoro) {
-        saved = await api.patch<Lavoro>(`/api/lavori/${lavoro.id}`, basePayload);
         await api.post(`/api/lavori/${lavoro.id}/strutture`, { strutture });
+        saved = await api.patch<Lavoro>(`/api/lavori/${lavoro.id}`, {
+          ...basePayload,
+          materiali: materialiDaAggiungere.map((item) => item.usage),
+        });
         push(`Lavoro #${saved.id} aggiornato`, 'success');
       } else {
         saved = await api.post<Lavoro>('/api/lavori', {
           ...basePayload,
           strutture: strutture.length > 0 ? strutture : undefined,
+          materiali: materialiDaAggiungere.length > 0
+            ? materialiDaAggiungere.map((item) => item.usage)
+            : undefined,
         });
         push(`Lavoro #${saved.id} creato`, 'success');
       }
@@ -233,6 +254,60 @@ export function LavoroFormModal({ open, onClose, onSaved, lavoro }: Props) {
               onChange={(e) => setForm({ ...form, note_istruzioni: e.target.value })}
             />
           </label>
+        </section>
+
+        <section>
+          <h3>Materiali del lavoro</h3>
+          {isEdit && lavoro && lavoro.materiali.length > 0 && (
+            <div className="work-material-existing">
+              <strong>Già registrati</strong>
+              <ul>
+                {lavoro.materiali.map((item) => (
+                  <li key={item.id}>
+                    <span>{labelCategoria(item.categoria)} · lotto {item.lotto}</span>
+                    <span>
+                      {item.stato_prelievo === 'parziale' ? 'Parziale' : item.stato_prelievo === 'nuovo' ? 'Nuovo' : 'Storico'}
+                      {' · '}{item.quantita_usata ?? '—'} {item.unita_misura ?? ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <small className="muted">Gli utilizzi già registrati restano nello storico MDR.</small>
+            </div>
+          )}
+
+          {materialiDaAggiungere.length > 0 && (
+            <div className="work-material-drafts">
+              <strong>Da aggiungere al salvataggio</strong>
+              {materialiDaAggiungere.map((item, index) => (
+                <div className="work-material-draft" key={`${item.usage.id_materiale}-${item.usage.stato_prelievo}-${index}`}>
+                  <span>
+                    {labelCategoria(item.material.categoria)} · {item.material.marca ?? ''}
+                    {' · '}lotto {item.material.lotto}
+                  </span>
+                  <span>
+                    {item.usage.stato_prelievo === 'nuovo' ? 'Nuovo' : 'Parziale'}
+                    {' · '}{item.usage.quantita_usata} {item.material.unita_misura ?? ''}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-link btn-link--danger"
+                    onClick={() => setMaterialiDaAggiungere((current) => current.filter((_, i) => i !== index))}
+                  >
+                    Rimuovi
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <MaterialUsagePicker
+            reserved={materialiDaAggiungere.map((item) => item.usage)}
+            disabled={submitting}
+            onAdd={(usage, material) => {
+              setMaterialiDaAggiungere((current) => [...current, { usage, material }]);
+            }}
+          />
         </section>
 
         <section>

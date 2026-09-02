@@ -102,6 +102,9 @@ Apri Aplo's e controlla:
 - l'accesso con il proprio operatore;
 - la presenza dei lavori precedenti;
 - la presenza di dottori, materiali e allegati;
+- nella sezione **Materiali**, la presenza delle colonne separate per misura,
+  quantità nuova e quantità parziale, oltre ai comandi **Modifica** e
+  **Archivia**;
 - le nuove sezioni **Collaboratori** e **Macchinari**;
 - l'apertura della pagina **Impostazioni**;
 - la corretta visualizzazione delle date di consegna.

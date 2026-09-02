@@ -103,7 +103,7 @@ const COLUMN_LABELS: Record<string, string> = {
   nome_file: 'File', size_bytes: 'Dimensione', mime_type: 'Tipo',
   categoria: 'Categoria', marca: 'Marca', colore: 'Colore', lotto: 'Lotto',
   deposito: 'Deposito', altezza_mm: 'Altezza (mm)', larghezza_mm: 'Larghezza (mm)',
-  quantita: 'Quantità', unita_misura: 'Unità', stato_utilizzo: 'Stato',
+  quantita: 'Quantità nuova', quantita_parziale: 'Quantità parziale', unita_misura: 'Unità', stato_utilizzo: 'Stato',
   soglia_alert: 'Soglia', nome: 'Nome', studio: 'Studio',
   telefono: 'Telefono', email: 'Email', ruolo: 'Ruolo',
   totale: 'Totale', count: 'Totale',

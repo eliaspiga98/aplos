@@ -7,36 +7,46 @@ import { CATEGORIA_LABEL, STATO_UTILIZZO_LABEL } from '../utils/format';
 interface Props {
   open: boolean;
   onClose: () => void;
-  onCreated: (m: Materiale) => void;
+  onSaved: (m: Materiale) => void;
+  materiale?: Materiale | null;
 }
 
 const CATEGORIE: CategoriaMateriale[] = ['zirconio', 'pmma', 'resina', 'metallo', 'ceramica', 'altro'];
-const STATI: StatoUtilizzo[] = ['nuovo', 'parziale', 'esaurito'];
 
 // Per zirconio e PMMA il formato standard è la "cialda" (disco) da fresatura,
 // quindi mostriamo i campi dimensionali. Per le altre categorie si usa una
-// quantità con unità di misura libera.
+// quantità con unità di misura libera. La quantità è sempre visibile: anche
+// una cialda ha una misura fisica e un numero di pezzi disponibili.
 function isCialda(cat: CategoriaMateriale): boolean {
   return cat === 'zirconio' || cat === 'pmma';
 }
 
-const initial = {
-  categoria: 'zirconio' as CategoriaMateriale,
-  sottotipo: '',
-  marca: '',
-  colore: '',
-  lotto: '',
-  id_deposito: '' as string | number,
-  altezza_mm: '',
-  larghezza_mm: '',
-  quantita: '',
-  unita_misura: '',
-  stato_utilizzo: 'nuovo' as StatoUtilizzo,
-  soglia_alert: '',
-};
+function initialForm() {
+  return {
+    categoria: 'zirconio' as CategoriaMateriale,
+    sottotipo: '',
+    marca: '',
+    colore: '',
+    lotto: '',
+    id_deposito: '' as string | number,
+    altezza_mm: '',
+    larghezza_mm: '',
+    quantita: '1',
+    quantita_parziale: '0',
+    unita_misura: 'pz',
+    soglia_alert: '',
+  };
+}
 
-export function MaterialeFormModal({ open, onClose, onCreated }: Props) {
-  const [form, setForm] = useState(initial);
+function derivedState(quantita: string, quantitaParziale: string): StatoUtilizzo {
+  if (Number(quantitaParziale) > 0) return 'parziale';
+  if (Number(quantita) > 0) return 'nuovo';
+  return 'esaurito';
+}
+
+export function MaterialeFormModal({ open, onClose, onSaved, materiale }: Props) {
+  const isEdit = !!materiale;
+  const [form, setForm] = useState(initialForm);
   const [depositi, setDepositi] = useState<Deposito[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -45,10 +55,29 @@ export function MaterialeFormModal({ open, onClose, onCreated }: Props) {
   useEffect(() => {
     if (!open) return;
     api.get<Deposito[]>('/api/depositi?limit=200').then(setDepositi).catch(() => setDepositi([]));
-  }, [open]);
+    if (materiale) {
+      setForm({
+        categoria: materiale.categoria,
+        sottotipo: materiale.sottotipo ?? '',
+        marca: materiale.marca ?? '',
+        colore: materiale.colore ?? '',
+        lotto: materiale.lotto,
+        id_deposito: materiale.id_deposito ?? '',
+        altezza_mm: materiale.altezza_mm ?? '',
+        larghezza_mm: materiale.larghezza_mm ?? '',
+        quantita: materiale.quantita,
+        quantita_parziale: materiale.quantita_parziale,
+        unita_misura: materiale.unita_misura ?? '',
+        soglia_alert: materiale.soglia_alert ?? '',
+      });
+    } else {
+      setForm(initialForm());
+    }
+    setError(null);
+  }, [materiale, open]);
 
   function reset() {
-    setForm(initial);
+    setForm(initialForm());
     setError(null);
     setBusy(false);
   }
@@ -70,20 +99,24 @@ export function MaterialeFormModal({ open, onClose, onCreated }: Props) {
         colore: form.colore.trim() || null,
         lotto: form.lotto.trim(),
         id_deposito: form.id_deposito ? Number(form.id_deposito) : null,
-        stato_utilizzo: form.stato_utilizzo,
+        quantita: Number(form.quantita || 0),
+        quantita_parziale: Number(form.quantita_parziale || 0),
+        unita_misura: form.unita_misura.trim() || null,
         soglia_alert: form.soglia_alert ? Number(form.soglia_alert) : null,
+        altezza_mm: isCialda(form.categoria) && form.altezza_mm ? Number(form.altezza_mm) : null,
+        larghezza_mm: isCialda(form.categoria) && form.larghezza_mm ? Number(form.larghezza_mm) : null,
       };
-      if (isCialda(form.categoria)) {
-        payload.altezza_mm = form.altezza_mm ? Number(form.altezza_mm) : null;
-        payload.larghezza_mm = form.larghezza_mm ? Number(form.larghezza_mm) : null;
-      } else {
-        payload.quantita = form.quantita ? Number(form.quantita) : null;
-        payload.unita_misura = form.unita_misura.trim() || null;
-      }
-      const created = await api.post<Materiale>('/api/materiali', payload);
-      push(`Materiale ${created.categoria} lotto ${created.lotto} creato`, 'success');
+      const saved = isEdit && materiale
+        ? await api.patch<Materiale>(`/api/materiali/${materiale.id}`, payload)
+        : await api.post<Materiale>('/api/materiali', payload);
+      push(
+        isEdit
+          ? `Materiale lotto ${saved.lotto} aggiornato`
+          : `Materiale ${saved.categoria} lotto ${saved.lotto} creato`,
+        'success',
+      );
       reset();
-      onCreated(created);
+      onSaved(saved);
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Errore');
@@ -92,11 +125,20 @@ export function MaterialeFormModal({ open, onClose, onCreated }: Props) {
     }
   }
 
+  const quantitaNuova = Number(form.quantita || 0);
+  const quantitaParziale = Number(form.quantita_parziale || 0);
+  const stato = derivedState(form.quantita, form.quantita_parziale);
+  const invalidQuantity = !Number.isFinite(quantitaNuova)
+    || !Number.isFinite(quantitaParziale)
+    || quantitaNuova < 0
+    || quantitaParziale < 0
+    || (!isEdit && quantitaNuova + quantitaParziale <= 0);
+
   return (
     <Modal
       open={open}
       onClose={close}
-      title="Nuovo materiale"
+      title={isEdit ? `Modifica materiale · lotto ${materiale!.lotto}` : 'Nuovo materiale'}
       size="lg"
       footer={
         <>
@@ -104,9 +146,9 @@ export function MaterialeFormModal({ open, onClose, onCreated }: Props) {
           <button
             type="submit"
             form="materiale-form"
-            disabled={busy || form.lotto.trim().length === 0}
+            disabled={busy || form.lotto.trim().length === 0 || invalidQuantity}
           >
-            {busy ? 'Salvataggio…' : 'Crea'}
+            {busy ? 'Salvataggio…' : isEdit ? 'Salva modifiche' : 'Crea'}
           </button>
         </>
       }
@@ -174,8 +216,8 @@ export function MaterialeFormModal({ open, onClose, onCreated }: Props) {
         </section>
 
         <section>
-          <h3>{isCialda(form.categoria) ? 'Dimensioni cialda' : 'Quantità'}</h3>
-          {isCialda(form.categoria) ? (
+          <h3>Misura e quantità</h3>
+          {isCialda(form.categoria) && (
             <div className="form-grid form-grid--2">
               <label>
                 Altezza (mm)
@@ -198,41 +240,36 @@ export function MaterialeFormModal({ open, onClose, onCreated }: Props) {
                 />
               </label>
             </div>
-          ) : (
-            <div className="form-grid form-grid--2">
-              <label>
-                Quantità
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={form.quantita}
-                  onChange={(e) => setForm({ ...form, quantita: e.target.value })}
-                />
-              </label>
-              <label>
-                Unità misura
-                <input
-                  placeholder="es. ml, g, pz"
-                  value={form.unita_misura}
-                  onChange={(e) => setForm({ ...form, unita_misura: e.target.value })}
-                />
-              </label>
-            </div>
           )}
-        </section>
-
-        <section>
-          <h3>Stato e alert</h3>
           <div className="form-grid form-grid--2">
             <label>
-              Stato utilizzo
-              <select
-                value={form.stato_utilizzo}
-                onChange={(e) => setForm({ ...form, stato_utilizzo: e.target.value as StatoUtilizzo })}
-              >
-                {STATI.map((s) => <option key={s} value={s}>{STATO_UTILIZZO_LABEL[s]}</option>)}
-              </select>
+              Quantità nuova*
+              <input
+                type="number"
+                step="0.001"
+                min="0"
+                value={form.quantita}
+                onChange={(e) => setForm({ ...form, quantita: e.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Quantità parziale
+              <input
+                type="number"
+                step="0.001"
+                min="0"
+                value={form.quantita_parziale}
+                onChange={(e) => setForm({ ...form, quantita_parziale: e.target.value })}
+              />
+            </label>
+            <label>
+              Unità di misura
+              <input
+                placeholder="es. pz, ml, g"
+                value={form.unita_misura}
+                onChange={(e) => setForm({ ...form, unita_misura: e.target.value })}
+              />
             </label>
             <label>
               Soglia alert (scorta minima)
@@ -245,6 +282,20 @@ export function MaterialeFormModal({ open, onClose, onCreated }: Props) {
               />
             </label>
           </div>
+          <div className="material-state-preview">
+            <span>Stato calcolato</span>
+            <strong className={`stock-state stock-state--${stato}`}>{STATO_UTILIZZO_LABEL[stato]}</strong>
+            <small>
+              Lo stato cambia automaticamente in base alle quantità nuove e parziali.
+            </small>
+          </div>
+          {invalidQuantity && (
+            <div className="error">
+              {isEdit
+                ? 'Le quantità non possono essere negative.'
+                : 'Inserisci almeno una unità disponibile.'}
+            </div>
+          )}
         </section>
 
         {error && <div className="error">{error}</div>}

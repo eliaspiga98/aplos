@@ -202,10 +202,10 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
 
           <section>
             <header className="section-header">
-              <h3>Materiali consumati ({data.materiali.length})</h3>
+              <h3>Materiali utilizzati ({data.materiali.length})</h3>
               {!showRegistra && (
                 <button type="button" onClick={() => setShowRegistra(true)}>
-                  Registra consumo
+                  Aggiungi materiale
                 </button>
               )}
             </header>
@@ -231,6 +231,8 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
                     <th>Quando</th>
                     <th>Materiale</th>
                     <th>Lotto</th>
+                    <th>Deposito</th>
+                    <th>Prelievo</th>
                     <th>Quantità</th>
                     <th>Note</th>
                   </tr>
@@ -245,6 +247,14 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
                         {m.colore ? ` ${m.colore}` : ''}
                       </td>
                       <td>{m.lotto}</td>
+                      <td>{m.deposito_nome ?? <span className="muted">—</span>}</td>
+                      <td>
+                        {m.stato_prelievo === 'nuovo'
+                          ? <span className="stock-chip stock-chip--new">Nuovo</span>
+                          : m.stato_prelievo === 'parziale'
+                            ? <span className="stock-chip stock-chip--partial">Parziale</span>
+                            : <span className="muted">Storico</span>}
+                      </td>
                       <td>
                         {m.quantita_usata
                           ? `${m.quantita_usata}${m.unita_misura ? ' ' + m.unita_misura : ''}`

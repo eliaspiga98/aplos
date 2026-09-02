@@ -115,7 +115,7 @@ export function LavoroStampaPage() {
         </section>
 
         <section className="scheda-section">
-          <h2>Materiali consumati ({data.materiali.length})</h2>
+          <h2>Materiali utilizzati ({data.materiali.length})</h2>
           {data.materiali.length === 0 ? (
             <p>Nessun materiale registrato.</p>
           ) : (
@@ -125,6 +125,8 @@ export function LavoroStampaPage() {
                   <th>Categoria</th>
                   <th>Marca / colore</th>
                   <th>Lotto</th>
+                  <th>Deposito</th>
+                  <th>Prelievo</th>
                   <th>Quantità</th>
                 </tr>
               </thead>
@@ -137,6 +139,8 @@ export function LavoroStampaPage() {
                       {m.colore ? ` ${m.colore}` : ''}
                     </td>
                     <td>{m.lotto}</td>
+                    <td>{m.deposito_nome ?? '—'}</td>
+                    <td>{m.stato_prelievo === 'nuovo' ? 'Nuovo' : m.stato_prelievo === 'parziale' ? 'Parziale' : 'Storico'}</td>
                     <td>
                       {m.quantita_usata
                         ? `${m.quantita_usata}${m.unita_misura ? ' ' + m.unita_misura : ''}`

@@ -27,7 +27,7 @@ REGOLE FONDAMENTALI:
 - Per i lavori, includi sempre: id, nome_paziente, data_consegna, stato; e
   fai JOIN con dottori per mostrare dottore_nome.
 - Per i materiali, includi: id, categoria, marca, colore, lotto, stato_utilizzo,
-  quantita, unita_misura.
+  quantita (nuova), quantita_parziale e unita_misura.
 - Per i dottori, includi: id, nome, studio, telefono.
 - Aggiungi sempre \`LIMIT 100\` (o meno) se non specificato.
 - Filtra sempre \`deleted_at IS NULL\` quando ha senso.
@@ -45,10 +45,10 @@ ORDER BY l.data_consegna ASC LIMIT 100
 
 Domanda: "Quali materiali sono sotto soglia?"
 \`\`\`sql
-SELECT id, categoria, marca, colore, lotto, quantita, unita_misura, soglia_alert
+SELECT id, categoria, marca, colore, lotto, quantita, quantita_parziale, unita_misura, soglia_alert
 FROM materiali
 WHERE deleted_at IS NULL AND soglia_alert IS NOT NULL
-  AND COALESCE(quantita, 0) <= soglia_alert
+  AND COALESCE(quantita, 0) + COALESCE(quantita_parziale, 0) <= soglia_alert
 ORDER BY categoria, lotto LIMIT 100
 \`\`\`
 
@@ -344,9 +344,9 @@ export async function aiRoutes(app: FastifyInstance) {
         role: 'assistant',
         content:
           '```sql\n' +
-          'SELECT id, categoria, marca, colore, lotto, quantita, unita_misura, soglia_alert\n' +
+          'SELECT id, categoria, marca, colore, lotto, quantita, quantita_parziale, unita_misura, soglia_alert\n' +
           'FROM materiali WHERE deleted_at IS NULL AND soglia_alert IS NOT NULL\n' +
-          '  AND COALESCE(quantita, 0) <= soglia_alert\n' +
+          '  AND COALESCE(quantita, 0) + COALESCE(quantita_parziale, 0) <= soglia_alert\n' +
           'ORDER BY categoria, lotto LIMIT 100\n```',
       },
       {
@@ -370,7 +370,7 @@ export async function aiRoutes(app: FastifyInstance) {
         role: 'assistant',
         content:
           '```sql\n' +
-          'SELECT id, categoria, marca, colore, lotto, quantita, unita_misura\n' +
+          'SELECT id, categoria, marca, colore, lotto, quantita, quantita_parziale, unita_misura\n' +
           "FROM materiali WHERE stato_utilizzo = 'esaurito' AND deleted_at IS NULL\n" +
           'ORDER BY categoria, lotto LIMIT 100\n```',
       },

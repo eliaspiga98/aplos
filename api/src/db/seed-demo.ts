@@ -111,22 +111,22 @@ async function main() {
     await c.query(`
       INSERT INTO materiali
         (categoria, sottotipo, marca, colore, lotto, id_deposito, altezza_mm, larghezza_mm,
-         quantita, unita_misura, stato_utilizzo, soglia_alert) VALUES
-        ('zirconio','multilayer',  'Aidite',     'A1',     'ZR-A1-2025-01', 1, 20, 98,   NULL, NULL, 'nuovo',     2),
-        ('zirconio','multilayer',  'Aidite',     'A2',     'ZR-A2-2025-03', 1, 20, 98,   NULL, NULL, 'parziale',  2),
-        ('zirconio','multilayer',  'Aidite',     'A3',     'ZR-A3-2025-02', 1, 20, 98,   NULL, NULL, 'nuovo',     2),
-        ('zirconio','monolitico',  'Zirkonzahn', 'BL2',    'ZK-BL2-2025-01',1, 16, 98,   NULL, NULL, 'nuovo',     1),
-        ('zirconio','multilayer',  'Vita',       'B1',     'VT-B1-2025-04', 1, 20, 98,   NULL, NULL, 'esaurito',  1),
-        ('pmma',    'provvisorio', 'Yamahachi',  'A2',     'PM-A2-2025-07', 2, 16, 98,   NULL, NULL, 'nuovo',     2),
-        ('pmma',    'mascherina',  'Yamahachi',  NULL,     'PM-CL-2025-08', 2, 25, 98,   NULL, NULL, 'parziale',  2),
-        ('pmma',    'monolitico',  'Vipi',       'A3',     'PM-A3-2025-05', 2, 20, 98,   NULL, NULL, 'nuovo',     2),
-        ('resina',  'autopolim.',  'GC',         NULL,     'RS-AC-2025-11', 3, NULL,NULL, 250, 'g',  'parziale',  100),
-        ('resina',  'fotopolim.',  '3M',         'A2',     'RS-FT-2025-09', 3, NULL,NULL, 480, 'g',  'nuovo',     100),
-        ('metallo', 'Cr-Co',       'Bego',       NULL,     'MT-CC-2025-02', 4, NULL,NULL, 1500,'g',  'nuovo',     500),
-        ('metallo', 'Cr-Co',       'BeGo',       NULL,     'MT-CC-2025-04', 4, NULL,NULL,  300,'g',  'esaurito',  500),
-        ('ceramica','impasto',     'Vita VM9',   'A2',     'CR-VM-2025-01', 5, NULL,NULL,  120,'g',  'parziale',  50),
-        ('ceramica','impasto',     'Vita VM9',   'A3',     'CR-VM-2025-02', 5, NULL,NULL,   45,'g',  'parziale',  50),
-        ('altro',   'isolante',    'Picodent',   NULL,     'AL-IS-2025-01', 5, NULL,NULL,  900,'ml', 'nuovo',     200)
+         quantita, quantita_parziale, unita_misura, stato_utilizzo, soglia_alert) VALUES
+        ('zirconio','multilayer',  'Aidite',     'A1',     'ZR-A1-2025-01', 1, 20, 98,      4,   0, 'pz', 'nuovo',     2),
+        ('zirconio','multilayer',  'Aidite',     'A2',     'ZR-A2-2025-03', 1, 20, 98,      3,   1, 'pz', 'parziale',  2),
+        ('zirconio','multilayer',  'Aidite',     'A3',     'ZR-A3-2025-02', 1, 20, 98,      5,   0, 'pz', 'nuovo',     2),
+        ('zirconio','monolitico',  'Zirkonzahn', 'BL2',    'ZK-BL2-2025-01',1, 16, 98,      2,   0, 'pz', 'nuovo',     1),
+        ('zirconio','multilayer',  'Vita',       'B1',     'VT-B1-2025-04', 1, 20, 98,      0,   0, 'pz', 'esaurito',  1),
+        ('pmma',    'provvisorio', 'Yamahachi',  'A2',     'PM-A2-2025-07', 2, 16, 98,      4,   0, 'pz', 'nuovo',     2),
+        ('pmma',    'mascherina',  'Yamahachi',  NULL,     'PM-CL-2025-08', 2, 25, 98,      2,   1, 'pz', 'parziale',  2),
+        ('pmma',    'monolitico',  'Vipi',       'A3',     'PM-A3-2025-05', 2, 20, 98,      3,   0, 'pz', 'nuovo',     2),
+        ('resina',  'autopolim.',  'GC',         NULL,     'RS-AC-2025-11', 3, NULL,NULL,    0, 250, 'g',  'parziale',  100),
+        ('resina',  'fotopolim.',  '3M',         'A2',     'RS-FT-2025-09', 3, NULL,NULL,  480,   0, 'g',  'nuovo',     100),
+        ('metallo', 'Cr-Co',       'Bego',       NULL,     'MT-CC-2025-02', 4, NULL,NULL, 1500,   0, 'g',  'nuovo',     500),
+        ('metallo', 'Cr-Co',       'BeGo',       NULL,     'MT-CC-2025-04', 4, NULL,NULL,    0,   0, 'g',  'esaurito',  500),
+        ('ceramica','impasto',     'Vita VM9',   'A2',     'CR-VM-2025-01', 5, NULL,NULL,    0, 120, 'g',  'parziale',  50),
+        ('ceramica','impasto',     'Vita VM9',   'A3',     'CR-VM-2025-02', 5, NULL,NULL,    0,  45, 'g',  'parziale',  50),
+        ('altro',   'isolante',    'Picodent',   NULL,     'AL-IS-2025-01', 5, NULL,NULL,  900,   0, 'ml', 'nuovo',     200)
     `);
 
     // 7. Lavori (25) — distribuiti per stato e date
