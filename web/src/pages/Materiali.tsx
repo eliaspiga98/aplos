@@ -63,18 +63,18 @@ export function MaterialiPage() {
 
   async function archive(materiale: Materiale) {
     const ok = await confirm({
-      title: `Archiviare il materiale del lotto ${materiale.lotto}`,
+      title: `Eliminare il materiale del lotto ${materiale.lotto}`,
       message: 'Il materiale sparirà dal magazzino, ma gli utilizzi già associati ai lavori resteranno nello storico.',
-      confirmText: 'Archivia',
+      confirmText: 'Elimina',
       danger: true,
     });
     if (!ok) return;
     try {
       await api.delete(`/api/materiali/${materiale.id}`);
-      push(`Materiale lotto ${materiale.lotto} archiviato`, 'success');
+      push(`Materiale lotto ${materiale.lotto} eliminato`, 'success');
       void fetchMateriali(categoria, debouncedQ, offset);
     } catch (error) {
-      push(error instanceof ApiError ? error.message : 'Impossibile archiviare il materiale', 'error');
+      push(error instanceof ApiError ? error.message : 'Impossibile eliminare il materiale', 'error');
     }
   }
 
@@ -152,7 +152,7 @@ export function MaterialiPage() {
                     </td>
                     <td className="material-actions">
                       <button type="button" className="btn-link" onClick={() => setEditing(m)}>Modifica</button>
-                      <button type="button" className="btn-link btn-link--danger" onClick={() => void archive(m)}>Archivia</button>
+                      <button type="button" className="btn-link btn-link--danger" onClick={() => void archive(m)}>Elimina</button>
                     </td>
                   </tr>
                 ))}

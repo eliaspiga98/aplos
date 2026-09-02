@@ -120,6 +120,8 @@ const EN: Record<string, string> = {
   'Dottore non trovato': 'Doctor not found',
   'Dottore eliminato': 'Doctor deleted',
   'Materiale non trovato': 'Material not found',
+  'Impossibile eliminare il materiale': 'Unable to delete the material',
+  'Il materiale sparirà dal magazzino, ma gli utilizzi già associati ai lavori resteranno nello storico.': 'The material will disappear from inventory, while existing job usage will remain in history.',
   'Deposito non trovato': 'Storage location not found',
   'Deposito eliminato': 'Storage location deleted',
   'Lavoro non trovato': 'Job not found',
@@ -408,7 +410,8 @@ export function translateText(value: string, language: Language): string {
       .replace(/^Allegato "(.+)" caricato$/, 'Attachment "$1" uploaded')
       .replace(/^Materiale (.+) lotto (.+) creato$/, 'Material $1 batch $2 created')
       .replace(/^Materiale lotto (.+) aggiornato$/, 'Material batch $1 updated')
-      .replace(/^Materiale lotto (.+) archiviato$/, 'Material batch $1 archived')
+      .replace(/^Materiale lotto (.+) eliminato$/, 'Material batch $1 deleted')
+      .replace(/^Eliminare il materiale del lotto (.+)$/, 'Delete material from batch $1')
       .replace(/^Impossibile eliminare: il deposito contiene (\d+) materiali attivi\.$/, 'Cannot delete: the storage location contains $1 active materials.');
   }
   return leading + translated + trailing;
