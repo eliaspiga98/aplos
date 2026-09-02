@@ -42,7 +42,7 @@ Fastify API (Node 20+, TypeScript)
 
 | Componente | Versione | Note |
 |---|---|---|
-| Node.js | `>= 20.6.0` | Richiesto per `--env-file` nativo |
+| Node.js | `>= 20.16.0` | Richiesto per `--env-file` nativo e parsing PDF locale |
 | TypeScript | 5.7.3 | Sia api che web |
 | **Backend** | | |
 | Fastify | 5.2.0 | Logger pino integrato |
@@ -165,6 +165,8 @@ dalla root delegano ai workspace.
 | `0007_storage_and_language.sql` | Lingua dell'operatore e directory configurabili per configurazione/upload. |
 | `0008_collaboratori.sql` | Anagrafica collaboratori fisici e storico append-only delle assegnazioni a lavori, con mansione e date di presa/rimozione incarico. |
 | `0009_macchinari_manutenzioni.sql` | Anagrafica macchinari, manutenzioni singole/ricorrenti, storico interventi e lettura notifiche per operatore. |
+| `0010_material_inventory.sql` | Quantità nuove/parziali separate e provenienza di ogni utilizzo materiale. |
+| `0011_document_library.sql` | Categorie documentali, metadati PDF, frammenti di testo e indice full-text per le risposte AI con fonti. |
 
 ### 4.3 Modello — entità principali
 
@@ -332,6 +334,7 @@ schemi TypeBox. Risposte d'errore JSON `{ error: string }`.
 | `/api/depositi` | `routes/depositi.ts` | `requireAuth` | CRUD depositi |
 | `/api/lavori/:id/allegati` | `routes/allegati.ts` | `requireAuth` | Upload (multipart), lista, delete allegati |
 | `/api/ai` | `routes/ai.ts` | `requireAuth` | `/health`, `/chat` (streaming NDJSON) |
+| `/api/documenti` | `routes/documenti.ts` | `requireAuth` | CRUD categorie/PDF, indicizzazione, download e domanda documentale in streaming NDJSON |
 | `/api/admin/settings/ai` | `routes/admin-settings.ts` | `requireAdmin` | GET/PUT settings AI, `/health`, `/test` what-if |
 
 Liste paginate restituiscono `X-Total-Count` (header) e un array;
@@ -346,6 +349,12 @@ Liste paginate restituiscono `X-Total-Count` (header) e un array;
 - DB salva metadati (`nome_file` originale, `storage_path`, `mime_type`,
   `size_bytes`, `id_operatore`).
 - nginx ha `client_max_body_size 60M` (margine sopra 50M).
+
+I PDF della libreria Documenti usano lo stesso root persistente, nella
+sottocartella `documenti/<uuid>.pdf`. Il backend estrae il testo localmente,
+lo divide per pagina in frammenti sovrapposti e li indicizza in PostgreSQL.
+Alla domanda, solo gli estratti più pertinenti vengono passati al provider AI;
+la risposta restituisce documento e pagina come fonti.
 
 ### 5.6 Audit log
 

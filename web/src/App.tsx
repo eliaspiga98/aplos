@@ -13,6 +13,7 @@ import { OperatoriPage } from './pages/Operatori';
 import { CollaboratoriPage } from './pages/Collaboratori';
 import { MacchinariPage } from './pages/Macchinari';
 import { ImpostazioniPage } from './pages/Impostazioni';
+import { DocumentiPage } from './pages/Documenti';
 import { useInactivityLogout } from './hooks/useInactivityLogout';
 
 const INACTIVITY_MINUTES = Number(import.meta.env.VITE_INACTIVITY_LOGOUT_MINUTES ?? '30');
@@ -50,6 +51,7 @@ export default function App() {
               <Route path="/dottori" element={<DottoriPage />} />
               <Route path="/materiali" element={<MaterialiPage />} />
               <Route path="/depositi" element={<DepositiPage />} />
+              <Route path="/documenti" element={<DocumentiPage />} />
               <Route path="/operatori" element={<OperatoriPage />} />
               <Route path="/collaboratori" element={<CollaboratoriPage />} />
               <Route path="/macchinari" element={<MacchinariPage />} />

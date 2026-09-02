@@ -135,6 +135,8 @@ COSA FA APLO'S:
 - Allegati STL e altri file per ogni lavoro.
 - Stampa scheda lavoro in A4, export CSV di tutte le tabelle.
 - Modulo AI integrato (questo) per interrogare i dati in linguaggio naturale.
+- Libreria Documenti per organizzare PDF in categorie e chiedere all'AI
+  risposte basate su protocolli, manuali e procedure caricati dal laboratorio.
 
 CONCETTI CHIAVE:
 - Stati di un lavoro: in_attesa, in_corso, in_prova (presso il dentista per
@@ -160,6 +162,8 @@ COME OPERARE:
 - Per stampare la scheda di un lavoro → apri il dettaglio, click su "Stampa".
   Dal dialog di stampa puoi anche salvare come PDF.
 - Per esportare in CSV → bottone in alto a destra in ogni pagina lista.
+- Per consultare un protocollo → apri Documenti, scegli una categoria o un PDF
+  e usa il riquadro "Chiedi ai documenti". La risposta indica documento e pagina.
 - Auto-logout dopo inattività (default 30 min) per sicurezza dei terminali
   condivisi.
 

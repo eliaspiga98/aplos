@@ -66,6 +66,16 @@ export function IconWarehouse(p: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function IconDocument(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} {...p}>
+      <path d="M6 2h8l4 4v16H6z" />
+      <path d="M14 2v5h5" />
+      <path d="M9 12h6M9 16h6M9 20h4" />
+    </svg>
+  );
+}
+
 export function IconUsers(p: SVGProps<SVGSVGElement>) {
   return (
     <svg {...base} {...p}>

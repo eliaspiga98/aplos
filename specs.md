@@ -170,6 +170,21 @@ Ridurre il tempo speso per la ricerca di informazioni complesse. Invece di impos
     5.  Il LLM formula la risposta testuale: *"Attualmente ci sono 5 blocchi di Zirconio colore A3 disponibili."*
 * **Sicurezza:** L'AI deve avere accesso in sola lettura (Read-Only) per prevenire cancellazioni o modifiche accidentali dei dati aziendali tramite prompt (No SQL Injection via AI).
 
+### 7.3 Libreria Documenti e protocolli
+
+* Gli operatori possono creare, rinominare ed eliminare categorie documentali
+  libere, per esempio *Protocolli di lavoro*, *CAD*, *Ceramica* o *Sicurezza*.
+* Ogni categoria può contenere PDF caricati nello storage locale del server.
+  Titolo e categoria del documento possono essere modificati in seguito.
+* Il testo selezionabile viene estratto e indicizzato per pagina senza inviare
+  il file a servizi esterni. Un PDF composto solo da scansioni resta archiviato
+  ma viene segnalato come non consultabile finché non sarà disponibile l'OCR.
+* L'operatore può interrogare tutta la libreria, una categoria o un singolo
+  documento. La risposta deve basarsi solo sugli estratti recuperati e mostrare
+  le fonti con titolo del documento e numero di pagina.
+* Creazione, modifica, eliminazione, reindicizzazione e domande documentali
+  devono essere registrate nell'audit log.
+
 ---
 
 ## 8. Modello Dati e Struttura Database (Entity-Relationship)
@@ -219,6 +234,13 @@ Per supportare le funzionalità sopra descritte, il database relazionale (es. Po
 * `azione` (String: es. "CAMBIO_STATO_LAVORO")
 * `dettagli` (JSON: es. da "In Corso" a "Finito")
 * `timestamp` (Datetime)
+
+### 8.6 Tabelle della libreria documentale
+
+* `Categorie_Documenti`: nome, descrizione, autore e soft delete.
+* `Documenti`: categoria, titolo, nome file, percorso, hash, pagine e stato di
+  indicizzazione.
+* `Documenti_Chunk`: testo del PDF suddiviso per pagina e indice full-text.
 
 ---
 

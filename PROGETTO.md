@@ -129,6 +129,17 @@ esplicito > meta-programmazione.
 - LLM locale, **utente DB read-only** dedicato (no SQL injection via prompt).
 - Schema descritto in un prompt di sistema riutilizzabile.
 
+### 5.8 Libreria Documenti
+
+- Categorie create e modificate liberamente dagli operatori.
+- Caricamento di PDF con testo selezionabile, conservati nello storage locale.
+- Indicizzazione per pagina e ricerca degli estratti pertinenti alla domanda.
+- Domande sull'intera libreria, su una categoria o su un singolo documento.
+- Risposte dell'LLM locale fondate esclusivamente sugli estratti recuperati,
+  con collegamenti al PDF e alla pagina usata come fonte.
+- I PDF composti solo da immagini restano archiviati ma vengono segnalati come
+  non consultabili fino a una futura elaborazione OCR.
+
 ## 6. Modello dati
 
 Schema completo: `db/migrations/0001_initial_schema.sql`.
@@ -151,6 +162,9 @@ Entità:
 - `manutenzioni_notifiche_lette` — letture avvisi per operatore/occorrenza.
 - `materiali` — magazzino. `(categoria, lotto)` UNIQUE.
 - `lavori_materiali` — **tracciabilità MDR**. Mai cancellare.
+- `categorie_documenti` — classificazione libera dei protocolli e manuali.
+- `documenti` — metadati e percorso persistente dei PDF caricati.
+- `documenti_chunk` — testo indicizzato per pagina e ricerca documentale.
 - `audit_log` — registro azioni immutabile.
 - `schema_migrations` — versioning migrazioni applicate.
 
@@ -240,6 +254,8 @@ Da affrontare prima del rispettivo modulo:
       interventi e notifiche in-app di preavviso/scadenza.
 - [x] **Fase 15** — Correzione date civili PostgreSQL senza slittamento di fuso
       orario e isolamento completo delle query di dettaglio nel database demo.
+- [x] **Fase 16** — Libreria Documenti con categorie libere, indicizzazione PDF
+      locale e risposte AI basate sui protocolli con fonti per pagina.
 
 ## 10. Deploy in laboratorio
 

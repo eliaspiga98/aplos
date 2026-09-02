@@ -26,6 +26,7 @@ import { depositiRoutes } from './routes/depositi.js';
 import { allegatiRoutes } from './routes/allegati.js';
 import { aiRoutes } from './routes/ai.js';
 import { adminSettingsRoutes } from './routes/admin-settings.js';
+import { documentiRoutes } from './routes/documenti.js';
 import { llmWarmup } from './ai/llm.js';
 import { startBackupScheduler } from './db/backup.js';
 
@@ -90,6 +91,7 @@ async function buildServer() {
   await app.register(depositiRoutes, { prefix: '/api/depositi' });
   await app.register(allegatiRoutes, { prefix: '/api' });
   await app.register(aiRoutes, { prefix: '/api/ai' });
+  await app.register(documentiRoutes, { prefix: '/api/documenti' });
   await app.register(adminSettingsRoutes, { prefix: '/api/admin/settings' });
 
   // In produzione l'API serve anche la build React. Cosi su Windows basta

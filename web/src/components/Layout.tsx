@@ -8,6 +8,7 @@ import { labelRuolo } from '../utils/format';
 import {
   IconHome, IconBriefcase, IconUserMd, IconBox, IconWarehouse,
   IconUsers, IconLogout, IconKey, IconClock, IconSettings, IconTool,
+  IconDocument,
 } from './icons';
 
 interface NavItem {
@@ -27,6 +28,7 @@ const navItems: NavItem[] = [
   { to: '/macchinari', label: 'Macchinari', icon: IconTool },
   { to: '/materiali',  label: 'Materiali',  icon: IconBox },
   { to: '/depositi',   label: 'Depositi',   icon: IconWarehouse },
+  { to: '/documenti',  label: 'Documenti',  icon: IconDocument },
   { to: '/operatori',  label: 'Operatori',  icon: IconUsers, adminOnly: true },
   { to: '/impostazioni', label: 'Impostazioni', icon: IconSettings },
 ];

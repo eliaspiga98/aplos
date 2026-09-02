@@ -70,6 +70,44 @@ const EN: Record<string, string> = {
   'Nessuno': 'None',
   'Materiali': 'Materials',
   'Materiale': 'Material',
+  'Documenti': 'Documents',
+  'Documento': 'Document',
+  'Categorie': 'Categories',
+  'Tutti i documenti': 'All documents',
+  'Libreria completa': 'Complete library',
+  'Carica PDF': 'Upload PDF',
+  'Carica un PDF': 'Upload a PDF',
+  'Carica il primo PDF': 'Upload the first PDF',
+  'Carica e indicizza': 'Upload and index',
+  'Indicizzazione…': 'Indexing…',
+  'Nuova categoria': 'New category',
+  'Nuova categoria documenti': 'New document category',
+  'Modifica categoria': 'Edit category',
+  'Crea categoria': 'Create category',
+  'Nome categoria*': 'Category name*',
+  'Chiedi ai documenti': 'Ask the documents',
+  'Chiedi all’AI': 'Ask AI',
+  'Chiedi su questo': 'Ask about this',
+  'Analisi…': 'Analysing…',
+  'Cerco nei documenti…': 'Searching documents…',
+  'Ambito': 'Scope',
+  'Tutti i documenti indicizzati': 'All indexed documents',
+  'Usa tutta la categoria': 'Use the entire category',
+  'Fonti consultate': 'Sources consulted',
+  '1 pagina': '1 page',
+  'Pronto per l’AI': 'Ready for AI',
+  'Testo non disponibile': 'Text unavailable',
+  'Apri PDF': 'Open PDF',
+  'Reindicizza': 'Reindex',
+  'Modifica documento': 'Edit document',
+  'File originale': 'Original file',
+  'File PDF*': 'PDF file*',
+  'Nessun PDF in questo spazio': 'No PDFs in this space',
+  'Protocolli, manuali e procedure consultabili dall’intelligenza artificiale.': 'Protocols, manuals and procedures that AI can consult.',
+  'La risposta usa solo i passaggi trovati nei PDF e indica documento e pagina.': 'The answer only uses passages found in PDFs and identifies the document and page.',
+  'Carica un protocollo con testo selezionabile per renderlo consultabile dall’AI.': 'Upload a protocol with selectable text to make it available to AI.',
+  'Il documento non sarà più consultabile dall’intelligenza artificiale.': 'The document will no longer be available to AI.',
+  'Il testo viene estratto sul server locale. I PDF composti solo da scansioni richiedono OCR e verranno segnalati.': 'Text is extracted on the local server. Scanned-only PDFs require OCR and will be flagged.',
   'Nuovo materiale': 'New material',
   'Materiali del lavoro': 'Job materials',
   'Materiali utilizzati': 'Materials used',
@@ -412,6 +450,17 @@ export function translateText(value: string, language: Language): string {
       .replace(/^Materiale lotto (.+) aggiornato$/, 'Material batch $1 updated')
       .replace(/^Materiale lotto (.+) eliminato$/, 'Material batch $1 deleted')
       .replace(/^Eliminare il materiale del lotto (.+)$/, 'Delete material from batch $1')
+      .replace(/^Categoria: (.+)$/, 'Category: $1')
+      .replace(/^(\d+) PDF$/, '$1 PDFs')
+      .replace(/^(\d+) pagine$/, '$1 pages')
+      .replace(/^pagina (\d+)$/, 'page $1')
+      .replace(/^Documento [“"](.+)[”"] indicizzato$/, 'Document “$1” indexed')
+      .replace(/^Documento [“"](.+)[”"] aggiornato$/, 'Document “$1” updated')
+      .replace(/^Documento [“"](.+)[”"] eliminato$/, 'Document “$1” deleted')
+      .replace(/^Documento [“"](.+)[”"] reindicizzato$/, 'Document “$1” reindexed')
+      .replace(/^Categoria [“"](.+)[”"] creata$/, 'Category “$1” created')
+      .replace(/^Categoria [“"](.+)[”"] aggiornata$/, 'Category “$1” updated')
+      .replace(/^Categoria [“"](.+)[”"] eliminata$/, 'Category “$1” deleted')
       .replace(/^Impossibile eliminare: il deposito contiene (\d+) materiali attivi\.$/, 'Cannot delete: the storage location contains $1 active materials.');
   }
   return leading + translated + trailing;
@@ -419,7 +468,7 @@ export function translateText(value: string, language: Language): string {
 
 function shouldSkip(node: Node): boolean {
   const parent = node.parentElement;
-  return !!parent?.closest('.chat-msg-text, script, style, code, pre');
+  return !!parent?.closest('.chat-msg-text, .document-answer-text, script, style, code, pre');
 }
 
 function translateElementTree(root: ParentNode, language: Language): void {

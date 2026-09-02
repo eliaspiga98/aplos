@@ -1,7 +1,7 @@
 # Aggiornamento di Aplo's tramite ZIP
 
 Questa guida spiega come aggiornare Aplo's mantenendo i lavori, i dottori,
-i materiali, gli operatori e gli allegati già presenti.
+i materiali, gli operatori, gli allegati e i documenti già presenti.
 
 ## Prima di iniziare
 
@@ -104,8 +104,10 @@ Apri Aplo's e controlla:
 - la presenza di dottori, materiali e allegati;
 - nella sezione **Materiali**, la presenza delle colonne separate per misura,
   quantità nuova e quantità parziale, oltre ai comandi **Modifica** e
-  **Archivia**;
+  **Elimina**;
 - le nuove sezioni **Collaboratori** e **Macchinari**;
+- la nuova sezione **Documenti**, con creazione delle categorie, caricamento
+  PDF e consultazione tramite intelligenza artificiale;
 - l'apertura della pagina **Impostazioni**;
 - la corretta visualizzazione delle date di consegna.
 

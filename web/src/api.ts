@@ -156,6 +156,48 @@ export interface User {
   lingua: 'it' | 'en';
 }
 
+export interface CategoriaDocumento {
+  id: number;
+  nome: string;
+  descrizione: string | null;
+  documenti_count: number;
+  documenti_pronti: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Documento {
+  id: number;
+  id_categoria: number;
+  categoria_nome: string;
+  titolo: string;
+  nome_file: string;
+  mime_type: string;
+  size_bytes: string;
+  sha256: string;
+  numero_pagine: number | null;
+  testo_caratteri: number;
+  stato_indicizzazione: 'pronto' | 'errore';
+  errore_indicizzazione: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocumentoFonte {
+  ref: number;
+  id_documento: number;
+  titolo: string;
+  categoria: string;
+  pagina: number;
+}
+
+export type DocumentQuestionEvent =
+  | { type: 'phase'; phase: 'searching_documents' | 'answering' }
+  | { type: 'sources'; sources: DocumentoFonte[] }
+  | { type: 'token'; text: string }
+  | { type: 'done'; risposta: string; sources: DocumentoFonte[] }
+  | { type: 'error'; error: string };
+
 export interface Operatore {
   id: number;
   nome: string;
