@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getList, api, ApiError, type Collaboratore } from '../api';
+import {
+  getList, api, ApiError,
+  type Collaboratore, type StatisticheCollaboratori,
+} from '../api';
 import { CollaboratoreFormModal } from '../components/CollaboratoreFormModal';
 import { ExportCsvButton } from '../components/ExportCsvButton';
 import { Pager } from '../components/Pager';
@@ -9,6 +12,11 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
 const PAGE_SIZE = 50;
 
+function currentMonth(): string {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export function CollaboratoriPage() {
   const [rows, setRows] = useState<Collaboratore[]>([]);
   const [total, setTotal] = useState(0);
@@ -17,6 +25,9 @@ export function CollaboratoriPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<Collaboratore | null>(null);
+  const [mese, setMese] = useState(currentMonth);
+  const [stats, setStats] = useState<StatisticheCollaboratori | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
   const debouncedQ = useDebouncedValue(q, 250);
   const confirm = useConfirm();
   const { push } = useToast();
@@ -36,6 +47,13 @@ export function CollaboratoriPage() {
 
   useEffect(() => { setOffset(0); }, [debouncedQ]);
   useEffect(() => { void fetchRows(debouncedQ, offset); }, [debouncedQ, offset, fetchRows]);
+  useEffect(() => {
+    setStatsLoading(true);
+    api.get<StatisticheCollaboratori>(`/api/collaboratori/statistiche?mese=${mese}`)
+      .then(setStats)
+      .catch(() => setStats(null))
+      .finally(() => setStatsLoading(false));
+  }, [mese]);
 
   async function remove(row: Collaboratore) {
     const ok = await confirm({
@@ -66,6 +84,45 @@ export function CollaboratoriPage() {
       <div className="filters">
         <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca nome o mansione…" />
       </div>
+
+      <section className="collaborator-report">
+        <header className="collaborator-report-header">
+          <div>
+            <h2>Riepilogo lavorazioni</h2>
+            <p className="muted">Conta i lavori completati da ogni collaboratore nel mese selezionato.</p>
+          </div>
+          <label>
+            Mese
+            <input type="month" value={mese} onChange={(e) => setMese(e.target.value)} />
+          </label>
+        </header>
+        {statsLoading ? <p>Caricamento riepilogo…</p> : stats && <div className="collaborator-report-grid">
+          <div>
+            <table className="table table--compact">
+              <thead><tr><th>Collaboratore</th><th>CAD</th><th>Rifinitura</th><th>Altro</th><th>Totale</th></tr></thead>
+              <tbody>
+                {stats.collaboratori.map((row) => <tr key={row.id}>
+                  <td><strong>{row.nome}</strong></td>
+                  <td>{row.lavori_cad}</td>
+                  <td>{row.lavori_rifinitura}</td>
+                  <td>{row.lavori_altro}</td>
+                  <td><strong>{row.lavori_totali}</strong></td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+          <aside className="collaboration-pairs">
+            <h3>Lavori svolti insieme</h3>
+            {stats.coppie.length === 0 ? <p className="muted">Nessuna collaborazione completata nel mese.</p> : (
+              <ul>{stats.coppie.map((pair) => <li key={`${pair.id_primo}-${pair.id_secondo}`}>
+                <span>{pair.primo} + {pair.secondo}</span>
+                <strong>{pair.lavori_insieme}</strong>
+              </li>)}</ul>
+            )}
+          </aside>
+        </div>}
+      </section>
+
       {loading ? <p>Caricamento…</p> : <>
         <table className="table">
           <thead><tr><th>Nome</th><th>Mansioni</th><th>Contatti</th><th>Lavori assegnati</th><th /></tr></thead>

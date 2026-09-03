@@ -42,12 +42,15 @@ export async function allegatiRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: number };
 
-      const lavoroExists = await req.pool.query(
-        `SELECT 1 FROM lavori WHERE id = $1 AND deleted_at IS NULL`,
+      const lavoroExists = await req.pool.query<{ archiviato_at: string | null }>(
+        `SELECT archiviato_at FROM lavori WHERE id = $1 AND deleted_at IS NULL`,
         [id],
       );
       if (lavoroExists.rowCount === 0) {
         return reply.code(404).send({ error: 'Lavoro non trovato' });
+      }
+      if (lavoroExists.rows[0]!.archiviato_at) {
+        return reply.code(409).send({ error: 'Ripristina il lavoro dall’archivio prima di aggiungere allegati' });
       }
 
       const data = await req.file();
@@ -137,11 +140,25 @@ export async function allegatiRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id, idAllegato } = req.params as { id: number; idAllegato: number };
       const result = await req.pool.query<AllegatoRow>(
-        `DELETE FROM lavori_allegati WHERE id = $1 AND id_lavoro = $2 RETURNING storage_path`,
+        `DELETE FROM lavori_allegati a
+         USING lavori l
+         WHERE a.id = $1 AND a.id_lavoro = $2 AND l.id = a.id_lavoro
+           AND l.deleted_at IS NULL AND l.archiviato_at IS NULL
+         RETURNING a.storage_path`,
         [idAllegato, id],
       );
       const row = result.rows[0];
-      if (!row) return reply.code(404).send({ error: 'Allegato non trovato' });
+      if (!row) {
+        const archived = await req.pool.query(
+          `SELECT 1 FROM lavori_allegati a JOIN lavori l ON l.id = a.id_lavoro
+            WHERE a.id = $1 AND a.id_lavoro = $2 AND l.archiviato_at IS NOT NULL`,
+          [idAllegato, id],
+        );
+        if (archived.rowCount) {
+          return reply.code(409).send({ error: 'Ripristina il lavoro dall’archivio prima di eliminare allegati' });
+        }
+        return reply.code(404).send({ error: 'Allegato non trovato' });
+      }
 
       const fullPath = join(await getUploadsRoot(), row.storage_path);
       try { await unlink(fullPath); } catch {

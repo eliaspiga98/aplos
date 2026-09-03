@@ -89,7 +89,9 @@ function KpiWidget({ lavori, materiali }: BoardData) {
   return (
     <div className="kpi-grid">
       <KpiCard icon={<IconBriefcase />} label="In attesa" value={counts['in_attesa'] ?? 0} tone="neutral" />
-      <KpiCard icon={<IconClock />} label="In corso" value={counts['in_corso'] ?? 0} tone="active" />
+      <KpiCard icon={<IconClock />} label="In corso CAD" value={counts['in_corso_cad'] ?? 0} tone="active" />
+      <KpiCard icon={<IconClock />} label="Attesa rifinitura" value={counts['attesa_rifinitura'] ?? 0} tone="neutral" />
+      <KpiCard icon={<IconClock />} label="In rifinitura" value={counts['in_corso_rifinitura'] ?? 0} tone="active" />
       <KpiCard icon={<IconAlert />} label="In prova" value={counts['in_prova'] ?? 0} tone="prova" />
       <KpiCard icon={<IconCheck />} label="Finiti" value={counts['finito'] ?? 0} tone="success" />
       <KpiCard icon={<IconBox />} label="Materiali sotto soglia" value={sottoSoglia.length + esauriti.length}
@@ -210,7 +212,10 @@ function CalendarioWidget({ lavori, navigate }: BoardData) {
 }
 
 function DistribuzioneWidget({ lavori, loading }: BoardData) {
-  const stati = ['in_attesa', 'in_corso', 'in_prova', 'finito'] as const;
+  const stati = [
+    'in_attesa', 'in_corso_cad', 'attesa_rifinitura',
+    'in_corso_rifinitura', 'in_prova', 'finito',
+  ] as const;
   const counts = lavori.reduce((acc, l) => { acc[l.stato] = (acc[l.stato] ?? 0) + 1; return acc; }, {} as Record<string, number>);
   const total = lavori.length;
   return (

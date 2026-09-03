@@ -39,7 +39,8 @@ Domanda: "Quanti lavori sono in corso?"
 \`\`\`sql
 SELECT l.id, l.nome_paziente, l.data_consegna, l.stato, d.nome AS dottore_nome
 FROM lavori l JOIN dottori d ON d.id = l.id_dottore
-WHERE l.stato = 'in_corso' AND l.deleted_at IS NULL
+WHERE l.stato IN ('in_corso_cad', 'in_corso_rifinitura')
+  AND l.deleted_at IS NULL AND l.archiviato_at IS NULL
 ORDER BY l.data_consegna ASC LIMIT 100
 \`\`\`
 
@@ -139,9 +140,11 @@ COSA FA APLO'S:
   risposte basate su protocolli, manuali e procedure caricati dal laboratorio.
 
 CONCETTI CHIAVE:
-- Stati di un lavoro: in_attesa, in_corso, in_prova (presso il dentista per
-  prova su paziente — il lavoro è fisicamente fuori dal laboratorio),
-  finito (pronto per consegna/fatturazione).
+- Stati di un lavoro: in_attesa, in_corso_cad, attesa_rifinitura,
+  in_corso_rifinitura, in_prova (presso il dentista per prova su paziente —
+  il lavoro è fisicamente fuori dal laboratorio), finito.
+- Un lavoro può avere più collaboratori. Ogni incarico indica la fase CAD,
+  rifinitura o altro e resta associato come attivo o completato.
 - Categorie materiali: zirconio, pmma, resina, metallo, ceramica, altro.
   Per zirconio e pmma il formato standard è la "cialda" (disco da fresare).
 - Stati materiale: nuovo, parziale (ne è già stato usato un pezzo, ma è
@@ -363,7 +366,8 @@ export async function aiRoutes(app: FastifyInstance) {
           '```sql\n' +
           'SELECT l.id, l.nome_paziente, l.data_consegna, l.stato, d.nome AS dottore_nome\n' +
           'FROM lavori l JOIN dottori d ON d.id = l.id_dottore\n' +
-          "WHERE l.stato = 'in_corso' AND l.deleted_at IS NULL\n" +
+          "WHERE l.stato IN ('in_corso_cad', 'in_corso_rifinitura')\n" +
+          "  AND l.deleted_at IS NULL AND l.archiviato_at IS NULL\n" +
           'ORDER BY l.data_consegna ASC LIMIT 100\n```',
       },
       {

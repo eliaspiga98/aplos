@@ -24,6 +24,9 @@ const ListQuery = Type.Object({
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   offset: Type.Optional(Type.Integer({ minimum: 0 })),
 });
+const StatsQuery = Type.Object({
+  mese: Type.String({ pattern: '^\\d{4}-(0[1-9]|1[0-2])$' }),
+});
 
 export async function collaboratoriRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireAuth);
@@ -40,7 +43,8 @@ export async function collaboratoriRoutes(app: FastifyInstance) {
     const result = await req.pool.query<Record<string, unknown> & { _total: string }>(
       `SELECT c.*,
               COUNT(DISTINCT a.id_lavoro) FILTER (
-                WHERE a.rimosso_at IS NULL AND l.deleted_at IS NULL
+                WHERE a.stato_incarico = 'attivo' AND l.deleted_at IS NULL
+                  AND l.archiviato_at IS NULL
               )::int AS lavori_attivi,
               COUNT(*) OVER () AS _total
        FROM collaboratori c
@@ -70,6 +74,57 @@ export async function collaboratoriRoutes(app: FastifyInstance) {
         ['id', 'nome', 'telefono', 'email', 'mansioni', 'note'],
         ['ID', 'Nome', 'Telefono', 'Email', 'Mansioni', 'Note'],
       ));
+  });
+
+  app.get('/statistiche', { schema: { querystring: StatsQuery } }, async (req) => {
+    const { mese } = req.query as { mese: string };
+    const [rows, pairs] = await Promise.all([
+      req.pool.query(
+        `WITH completamenti AS (
+           SELECT DISTINCT e.id_collaboratore, e.id_lavoro, e.fase
+             FROM lavori_assegnazioni_eventi e
+             JOIN lavori l ON l.id = e.id_lavoro
+            WHERE e.evento = 'completato'
+              AND e.created_at >= ($1 || '-01')::date
+              AND e.created_at < (($1 || '-01')::date + INTERVAL '1 month')
+              AND l.deleted_at IS NULL
+         )
+         SELECT c.id, c.nome,
+                COUNT(DISTINCT co.id_lavoro) FILTER (WHERE co.fase = 'cad')::int AS lavori_cad,
+                COUNT(DISTINCT co.id_lavoro) FILTER (WHERE co.fase = 'rifinitura')::int AS lavori_rifinitura,
+                COUNT(DISTINCT co.id_lavoro) FILTER (WHERE co.fase = 'altro')::int AS lavori_altro,
+                COUNT(DISTINCT co.id_lavoro)::int AS lavori_totali
+           FROM collaboratori c
+           LEFT JOIN completamenti co ON co.id_collaboratore = c.id
+          WHERE c.deleted_at IS NULL
+          GROUP BY c.id, c.nome
+          ORDER BY lavori_totali DESC, c.nome`,
+        [mese],
+      ),
+      req.pool.query(
+        `WITH completamenti AS (
+           SELECT DISTINCT e.id_collaboratore, e.id_lavoro
+             FROM lavori_assegnazioni_eventi e
+             JOIN lavori l ON l.id = e.id_lavoro
+            WHERE e.evento = 'completato'
+              AND e.created_at >= ($1 || '-01')::date
+              AND e.created_at < (($1 || '-01')::date + INTERVAL '1 month')
+              AND l.deleted_at IS NULL
+         )
+         SELECT a.id_collaboratore AS id_primo, ca.nome AS primo,
+                b.id_collaboratore AS id_secondo, cb.nome AS secondo,
+                COUNT(DISTINCT a.id_lavoro)::int AS lavori_insieme
+           FROM completamenti a
+           JOIN completamenti b ON b.id_lavoro = a.id_lavoro
+             AND b.id_collaboratore > a.id_collaboratore
+           JOIN collaboratori ca ON ca.id = a.id_collaboratore
+           JOIN collaboratori cb ON cb.id = b.id_collaboratore
+          GROUP BY a.id_collaboratore, ca.nome, b.id_collaboratore, cb.nome
+          ORDER BY lavori_insieme DESC, ca.nome, cb.nome`,
+        [mese],
+      ),
+    ]);
+    return { mese, collaboratori: rows.rows, coppie: pairs.rows };
   });
 
   app.get('/:id', { schema: { params: IdParams } }, async (req, reply) => {
@@ -146,9 +201,19 @@ export async function collaboratoriRoutes(app: FastifyInstance) {
       );
       if (result.rowCount === 0) return null;
       const assignments = await client.query(
-        `UPDATE lavori_assegnazioni
-         SET rimosso_at = NOW(), id_operatore_rimozione = $1
-         WHERE id_collaboratore = $2 AND rimosso_at IS NULL
+        `WITH rimossi AS (
+           UPDATE lavori_assegnazioni
+              SET stato_incarico = 'rimosso', rimosso_at = NOW(),
+                  id_operatore_rimozione = $1, id_operatore_stato = $1
+            WHERE id_collaboratore = $2 AND stato_incarico <> 'rimosso'
+            RETURNING id, id_lavoro, id_collaboratore, fase, mansione, rimosso_at
+         )
+         INSERT INTO lavori_assegnazioni_eventi
+           (id_assegnazione, id_lavoro, id_collaboratore, fase, mansione,
+            evento, id_operatore, created_at)
+         SELECT id, id_lavoro, id_collaboratore, fase, mansione,
+                'rimosso', $1, rimosso_at
+           FROM rimossi
          RETURNING id`,
         [req.user!.id, id],
       );

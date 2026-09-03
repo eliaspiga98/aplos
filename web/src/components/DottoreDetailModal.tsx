@@ -89,7 +89,10 @@ export function DottoreDetailModal({ idDottore, onClose, onChanged }: Props) {
             </div>
 
             <div className="dottore-counts">
-              {(['in_attesa', 'in_corso', 'in_prova', 'finito'] as const).map((s) => (
+              {([
+                'in_attesa', 'in_corso_cad', 'attesa_rifinitura',
+                'in_corso_rifinitura', 'in_prova', 'finito',
+              ] as const).map((s) => (
                 <span key={s} className={`stato-pill stato-pill--${s}`}>
                   {STATO_LAVORO_LABEL[s]}: {data.counts[s]}
                 </span>

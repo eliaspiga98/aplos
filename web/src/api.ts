@@ -213,13 +213,15 @@ export interface Lavoro {
   nome_paziente: string;
   data_entrata: string;
   data_consegna: string;
-  stato: 'in_attesa' | 'in_corso' | 'in_prova' | 'finito';
+  stato: StatoLavoro;
   scala_colori: string | null;
   tipologia_lavoro: string | null;
   id_dottore: number;
   dottore_nome: string;
   dottore_studio: string | null;
   assegnazioni: AssegnazioneLavoro[];
+  finito_at: string | null;
+  archiviato_at: string | null;
 }
 
 export interface Collaboratore {
@@ -238,13 +240,50 @@ export interface AssegnazioneLavoro {
   id: number;
   id_collaboratore: number;
   collaboratore_nome: string;
+  fase: FaseAssegnazione;
   mansione: string;
+  stato_incarico: StatoAssegnazione;
   assegnato_at: string;
-  rimosso_at?: string | null;
+  completato_at: string | null;
   id_operatore_assegnazione?: number;
   operatore_assegnazione_nome?: string | null;
-  id_operatore_rimozione?: number | null;
-  operatore_rimozione_nome?: string | null;
+  id_operatore_stato?: number | null;
+  operatore_stato_nome?: string | null;
+}
+
+export type FaseAssegnazione = 'cad' | 'rifinitura' | 'altro';
+export type StatoAssegnazione = 'attivo' | 'completato';
+
+export interface EventoAssegnazione {
+  id: number;
+  id_assegnazione: number;
+  id_collaboratore: number;
+  collaboratore_nome: string;
+  fase: FaseAssegnazione;
+  mansione: string;
+  evento: 'assegnato' | 'completato' | 'riattivato' | 'modificato' | 'rimosso';
+  created_at: string;
+  id_operatore: number | null;
+  operatore_nome: string | null;
+}
+
+export interface StatisticheCollaboratori {
+  mese: string;
+  collaboratori: Array<{
+    id: number;
+    nome: string;
+    lavori_cad: number;
+    lavori_rifinitura: number;
+    lavori_altro: number;
+    lavori_totali: number;
+  }>;
+  coppie: Array<{
+    id_primo: number;
+    primo: string;
+    id_secondo: number;
+    secondo: string;
+    lavori_insieme: number;
+  }>;
 }
 
 export interface Dottore {
@@ -265,7 +304,13 @@ export type CategoriaMateriale =
 export type StatoUtilizzo = 'nuovo' | 'parziale' | 'esaurito';
 export type StatoPrelievoMateriale = 'nuovo' | 'parziale';
 
-export type StatoLavoro = 'in_attesa' | 'in_corso' | 'in_prova' | 'finito';
+export type StatoLavoro =
+  | 'in_attesa'
+  | 'in_corso_cad'
+  | 'attesa_rifinitura'
+  | 'in_corso_rifinitura'
+  | 'in_prova'
+  | 'finito';
 
 export interface Materiale {
   id: number;
@@ -291,6 +336,7 @@ export interface Deposito {
   nome: string;
   descrizione: string | null;
   n_materiali?: number;
+  quantita_materiali?: number;
   created_at: string;
   updated_at: string;
 }
@@ -404,7 +450,7 @@ export interface TimelineEvent {
 
 export interface DottoreStats {
   dottore: Dottore;
-  counts: { in_attesa: number; in_corso: number; in_prova: number; finito: number };
+  counts: Record<StatoLavoro, number>;
   riassunto: {
     totale: number;
     in_ritardo: number;

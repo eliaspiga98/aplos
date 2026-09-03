@@ -3,9 +3,16 @@ import { Type } from '@sinclair/typebox';
 
 import { withTx } from '../db/pool.js';
 import { logAudit } from '../audit.js';
-import { requireAuth } from '../auth/guards.js';
+import { requireAdmin, requireAuth } from '../auth/guards.js';
 import { isVitaShade, validateToothArray } from '../validators.js';
 import { rowsToCsv, csvFilename } from '../csv.js';
+import {
+  AssignmentValidationError,
+  completeActivePhaseAssignments,
+  syncJobAssignments,
+  workStatePhase,
+  type AssignmentInput,
+} from '../job-assignments.js';
 import {
   registerMaterialUsage,
   type MaterialUsageInput,
@@ -13,7 +20,9 @@ import {
 
 const StatoLavoro = Type.Union([
   Type.Literal('in_attesa'),
-  Type.Literal('in_corso'),
+  Type.Literal('in_corso_cad'),
+  Type.Literal('attesa_rifinitura'),
+  Type.Literal('in_corso_rifinitura'),
   Type.Literal('in_prova'),
   Type.Literal('finito'),
 ]);
@@ -29,8 +38,18 @@ const Struttura = Type.Object({
 });
 
 const AssegnazioneInput = Type.Object({
+  id: Type.Optional(Type.Integer({ minimum: 1 })),
   id_collaboratore: Type.Integer({ minimum: 1 }),
+  fase: Type.Union([
+    Type.Literal('cad'),
+    Type.Literal('rifinitura'),
+    Type.Literal('altro'),
+  ]),
   mansione: Type.String({ minLength: 1, maxLength: 120 }),
+  stato_incarico: Type.Union([
+    Type.Literal('attivo'),
+    Type.Literal('completato'),
+  ]),
 });
 
 const MaterialUsageInputBody = Type.Object({
@@ -57,7 +76,7 @@ const CreateBody = Type.Object({
 });
 
 const UpdateBody = Type.Partial(
-  Type.Omit(CreateBody, ['strutture']),
+  Type.Omit(CreateBody, ['strutture', 'stato']),
 );
 
 const StatoBody = Type.Object({
@@ -68,20 +87,65 @@ const StatoBody = Type.Object({
 const ListQuery = Type.Object({
   q: Type.Optional(Type.String()),
   stato: Type.Optional(StatoLavoro),
+  archivio: Type.Optional(Type.Boolean()),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   offset: Type.Optional(Type.Integer({ minimum: 0 })),
 });
 
 const IdParams = Type.Object({ id: Type.Integer({ minimum: 1 }) });
 const UPDATE_KEYS = [
-  'id_dottore', 'nome_paziente', 'data_entrata', 'data_consegna', 'stato',
+  'id_dottore', 'nome_paziente', 'data_entrata', 'data_consegna',
   'scala_colori', 'tipologia_lavoro', 'note_istruzioni',
 ] as const;
 const AssegnazioniBody = Type.Object({
   assegnazioni: Type.Array(AssegnazioneInput, { maxItems: 20 }),
 });
 
+const ArchiveSettingsBody = Type.Object({
+  giorni: Type.Integer({ minimum: 0, maximum: 365 }),
+});
+
 const RegistraMaterialeBody = MaterialUsageInputBody;
+
+async function validateCollaborators(
+  pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<{ id: number }> }> },
+  assignments: AssignmentInput[],
+): Promise<boolean> {
+  const ids = [...new Set(assignments.map((assignment) => assignment.id_collaboratore))];
+  if (ids.length === 0) return true;
+  const active = await pool.query(
+    `SELECT id FROM collaboratori WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL`,
+    [ids],
+  );
+  return active.rows.length === ids.length;
+}
+
+async function archiveDueFinishedJobs(
+  pool: Parameters<typeof logAudit>[0],
+): Promise<number[]> {
+  const result = await pool.query<{ id: number }>(
+    `UPDATE lavori
+        SET archiviato_at = NOW(), id_operatore_archiviazione = NULL
+      WHERE deleted_at IS NULL AND archiviato_at IS NULL
+        AND stato = 'finito' AND finito_at IS NOT NULL
+        AND (SELECT archiviazione_lavori_giorni FROM app_settings WHERE id = 1) > 0
+        AND finito_at <= NOW() - make_interval(
+          days => (SELECT archiviazione_lavori_giorni FROM app_settings WHERE id = 1)
+        )
+      RETURNING id`,
+  );
+  const ids = result.rows.map((row) => row.id);
+  for (const id of ids) {
+    await logAudit(pool, {
+      idOperatore: null,
+      azione: 'ARCHIVIA_LAVORO_AUTOMATICO',
+      entita: 'lavori',
+      idEntita: id,
+      dettagli: { dopo_giorni: 'configurazione_globale' },
+    });
+  }
+  return ids;
+}
 
 export async function lavoriRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireAuth);
@@ -93,14 +157,19 @@ export async function lavoriRoutes(app: FastifyInstance) {
    * in coda.
    */
   app.get('/', { schema: { querystring: ListQuery } }, async (req, reply) => {
-    const { q, stato, limit = 50, offset = 0 } = req.query as {
+    const { q, stato, archivio = false, limit = 50, offset = 0 } = req.query as {
       q?: string;
       stato?: string;
+      archivio?: boolean;
       limit?: number;
       offset?: number;
     };
 
-    const where: string[] = ['l.deleted_at IS NULL'];
+    await archiveDueFinishedJobs(req.pool);
+    const where: string[] = [
+      'l.deleted_at IS NULL',
+      archivio ? 'l.archiviato_at IS NOT NULL' : 'l.archiviato_at IS NULL',
+    ];
     const params: unknown[] = [];
 
     if (stato) {
@@ -134,14 +203,17 @@ export async function lavoriRoutes(app: FastifyInstance) {
                  'id', a.id,
                  'id_collaboratore', a.id_collaboratore,
                  'collaboratore_nome', c.nome,
+                 'fase', a.fase,
                  'mansione', a.mansione,
-                 'assegnato_at', a.assegnato_at
+                 'stato_incarico', a.stato_incarico,
+                 'assegnato_at', a.assegnato_at,
+                 'completato_at', a.completato_at
                ) ORDER BY a.assegnato_at)
                FROM lavori_assegnazioni a
                JOIN collaboratori c ON c.id = a.id_collaboratore
-               WHERE a.id_lavoro = l.id AND a.rimosso_at IS NULL
+               WHERE a.id_lavoro = l.id AND a.stato_incarico <> 'rimosso'
              ), '[]'::json) AS assegnazioni,
-             l.created_at, l.updated_at,
+             l.finito_at, l.archiviato_at, l.created_at, l.updated_at,
              COUNT(*) OVER () AS _total
       FROM lavori l
       JOIN dottori d ON d.id = l.id_dottore
@@ -159,8 +231,14 @@ export async function lavoriRoutes(app: FastifyInstance) {
    * Export CSV: stessi filtri di list ma senza limit/offset (cap a 10000).
    */
   app.get('/csv', { schema: { querystring: Type.Omit(ListQuery, ['limit', 'offset']) } }, async (req, reply) => {
-    const { q, stato } = req.query as { q?: string; stato?: string };
-    const where: string[] = ['l.deleted_at IS NULL'];
+    const { q, stato, archivio = false } = req.query as {
+      q?: string; stato?: string; archivio?: boolean;
+    };
+    await archiveDueFinishedJobs(req.pool);
+    const where: string[] = [
+      'l.deleted_at IS NULL',
+      archivio ? 'l.archiviato_at IS NOT NULL' : 'l.archiviato_at IS NULL',
+    ];
     const params: unknown[] = [];
 
     if (stato) {
@@ -183,7 +261,7 @@ export async function lavoriRoutes(app: FastifyInstance) {
     const result = await req.pool.query<Record<string, unknown>>(
       `SELECT l.id, l.nome_paziente, d.nome AS dottore_nome, d.studio AS dottore_studio,
               l.data_entrata, l.data_consegna, l.stato, l.scala_colori, l.tipologia_lavoro,
-              l.note_istruzioni
+              l.note_istruzioni, l.finito_at, l.archiviato_at
        FROM lavori l JOIN dottori d ON d.id = l.id_dottore
        WHERE ${where.join(' AND ')}
        ORDER BY l.data_consegna ASC
@@ -193,15 +271,54 @@ export async function lavoriRoutes(app: FastifyInstance) {
 
     const cols = ['id', 'nome_paziente', 'dottore_nome', 'dottore_studio',
                   'data_entrata', 'data_consegna', 'stato', 'scala_colori',
-                  'tipologia_lavoro', 'note_istruzioni'];
+                  'tipologia_lavoro', 'note_istruzioni', 'finito_at', 'archiviato_at'];
     const headers = ['ID', 'Paziente', 'Dottore', 'Studio',
                      'Data entrata', 'Data consegna', 'Stato', 'Colore',
-                     'Tipologia', 'Istruzioni'];
+                     'Tipologia', 'Istruzioni', 'Finito il', 'Archiviato il'];
 
     reply
       .header('Content-Type', 'text/csv; charset=utf-8')
       .header('Content-Disposition', `attachment; filename="${csvFilename('lavori')}"`)
       .send(rowsToCsv(result.rows, cols, headers));
+  });
+
+  app.get('/archivio-config', async (req) => {
+    await archiveDueFinishedJobs(req.pool);
+    const result = await req.pool.query<{
+      archiviazione_lavori_giorni: number;
+      lavori_archiviati: number;
+    }>(
+      `SELECT s.archiviazione_lavori_giorni,
+              (SELECT COUNT(*)::int FROM lavori
+                WHERE deleted_at IS NULL AND archiviato_at IS NOT NULL) AS lavori_archiviati
+         FROM app_settings s WHERE s.id = 1`,
+    );
+    return {
+      giorni: Number(result.rows[0]?.archiviazione_lavori_giorni ?? 15),
+      lavori_archiviati: Number(result.rows[0]?.lavori_archiviati ?? 0),
+    };
+  });
+
+  app.put('/archivio-config', {
+    preHandler: requireAdmin,
+    schema: { body: ArchiveSettingsBody },
+  }, async (req) => {
+    const { giorni } = req.body as { giorni: number };
+    await req.pool.query(
+      `UPDATE app_settings
+          SET archiviazione_lavori_giorni = $1, updated_at = NOW(), updated_by = $2
+        WHERE id = 1`,
+      [giorni, req.user!.id],
+    );
+    await logAudit(req.pool, {
+      idOperatore: req.user!.id,
+      azione: 'UPDATE_ARCHIVIAZIONE_LAVORI',
+      entita: 'app_settings',
+      idEntita: 1,
+      dettagli: { giorni },
+    });
+    await archiveDueFinishedJobs(req.pool);
+    return { giorni };
   });
 
   app.get('/:id', { schema: { params: IdParams } }, async (req, reply) => {
@@ -243,16 +360,18 @@ export async function lavoriRoutes(app: FastifyInstance) {
         [id],
       ),
       req.pool.query(
-        `SELECT a.id, a.id_collaboratore, c.nome AS collaboratore_nome,
-                a.mansione, a.assegnato_at, a.rimosso_at,
-                a.id_operatore_assegnazione, oa.nome AS operatore_assegnazione_nome,
-                a.id_operatore_rimozione, ore.nome AS operatore_rimozione_nome
+        `SELECT a.id::int AS id, a.id_collaboratore::int AS id_collaboratore,
+                c.nome AS collaboratore_nome,
+                a.fase, a.mansione, a.stato_incarico,
+                a.assegnato_at, a.completato_at,
+                a.id_operatore_assegnazione::int, oa.nome AS operatore_assegnazione_nome,
+                a.id_operatore_stato::int, os.nome AS operatore_stato_nome
          FROM lavori_assegnazioni a
          JOIN collaboratori c ON c.id = a.id_collaboratore
          LEFT JOIN operatori oa ON oa.id = a.id_operatore_assegnazione
-         LEFT JOIN operatori ore ON ore.id = a.id_operatore_rimozione
-         WHERE a.id_lavoro = $1
-         ORDER BY (a.rimosso_at IS NULL) DESC, a.assegnato_at DESC`,
+         LEFT JOIN operatori os ON os.id = a.id_operatore_stato
+         WHERE a.id_lavoro = $1 AND a.stato_incarico <> 'rimosso'
+         ORDER BY (a.stato_incarico = 'attivo') DESC, a.assegnato_at DESC`,
         [id],
       ),
     ]);
@@ -392,6 +511,7 @@ export async function lavoriRoutes(app: FastifyInstance) {
           [id],
         );
         if (!before.rows[0]) return null;
+        if (before.rows[0].archiviato_at) return { archived: true };
 
         let lavoro = before.rows[0];
         if (keys.length > 0) {
@@ -437,16 +557,15 @@ export async function lavoriRoutes(app: FastifyInstance) {
         return lavoro;
       });
       if (!updated) return reply.code(404).send({ error: 'Lavoro non trovato' });
+      if ('archived' in updated) {
+        return reply.code(409).send({ error: 'Ripristina il lavoro dall’archivio prima di modificarlo' });
+      }
 
       return updated;
     },
   );
 
-  /**
-   * Cambio stato come endpoint dedicato: rende il log di audit ovvio e
-   * permette in futuro di applicare regole specifiche (es. da "in_corso" si
-   * può andare solo in "in_prova" o "finito").
-   */
+  /** Cambio fase libero, con chiusura automatica degli incarichi della fase lasciata. */
   app.post(
     '/:id/stato',
     { schema: { params: IdParams, body: StatoBody } },
@@ -454,93 +573,144 @@ export async function lavoriRoutes(app: FastifyInstance) {
       const { id } = req.params as { id: number };
       const requestBody = req.body as {
         stato: string;
-        assegnazioni?: Array<{ id_collaboratore: number; mansione: string }>;
+        assegnazioni?: AssignmentInput[];
       };
       const { stato } = requestBody;
       const assignmentsProvided = requestBody.assegnazioni !== undefined;
-
-      const normalized = (requestBody.assegnazioni ?? []).map((a) => ({
-        id_collaboratore: a.id_collaboratore,
-        mansione: a.mansione.trim(),
-      }));
-      if (normalized.some((a) => a.mansione.length === 0)) {
-        return reply.code(400).send({ error: 'La mansione non può essere vuota' });
-      }
-      const desiredKeys = new Set(normalized.map((a) => `${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
-      if (desiredKeys.size !== normalized.length) {
-        return reply.code(400).send({ error: 'La stessa assegnazione è presente più volte' });
-      }
-      const collaboratorIds = [...new Set(normalized.map((a) => a.id_collaboratore))];
-      if (collaboratorIds.length > 0) {
-        const active = await req.pool.query<{ id: number }>(
-          `SELECT id FROM collaboratori WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL`,
-          [collaboratorIds],
-        );
-        if (active.rows.length !== collaboratorIds.length) {
-          return reply.code(400).send({ error: 'Uno o più collaboratori non sono disponibili' });
-        }
+      const assignments = requestBody.assegnazioni ?? [];
+      if (!await validateCollaborators(req.pool, assignments)) {
+        return reply.code(400).send({ error: 'Uno o più collaboratori non sono disponibili' });
       }
 
-      const updated = await withTx(req.pool, async (client) => {
-        const before = await client.query<{ stato: string }>(
-          `SELECT stato FROM lavori WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
-          [id],
-        );
-        const prev = before.rows[0];
-        if (!prev) return null;
-
-        const result = await client.query(
-          `UPDATE lavori SET stato = $1 WHERE id = $2 RETURNING *`,
-          [stato, id],
-        );
-        if (assignmentsProvided) {
-          const current = await client.query<{ id: number; id_collaboratore: number; mansione: string }>(
-            `SELECT id, id_collaboratore, mansione FROM lavori_assegnazioni
-             WHERE id_lavoro = $1 AND rimosso_at IS NULL FOR UPDATE`,
+      try {
+        const updated = await withTx(req.pool, async (client) => {
+          const before = await client.query<{ stato: string; archiviato_at: string | null }>(
+            `SELECT stato, archiviato_at FROM lavori
+              WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
             [id],
           );
-          const currentKeys = new Set(current.rows.map((a) => `${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
-          const toRemove = current.rows.filter((a) => !desiredKeys.has(`${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
-          if (toRemove.length > 0) {
-            await client.query(
-              `UPDATE lavori_assegnazioni
-               SET rimosso_at = NOW(), id_operatore_rimozione = $1
-               WHERE id = ANY($2::bigint[])`,
-              [req.user!.id, toRemove.map((a) => a.id)],
-            );
+          const previous = before.rows[0];
+          if (!previous) return null;
+          if (previous.archiviato_at) return { archived: true };
+
+          let assignmentResult: Awaited<ReturnType<typeof syncJobAssignments>> | null = null;
+          if (assignmentsProvided) {
+            assignmentResult = await syncJobAssignments(client, id, assignments, req.user!.id);
           }
-          for (const assignment of normalized) {
-            const key = `${assignment.id_collaboratore}:${assignment.mansione.toLocaleLowerCase('it')}`;
-            if (!currentKeys.has(key)) {
-              await client.query(
-                `INSERT INTO lavori_assegnazioni
-                   (id_lavoro, id_collaboratore, mansione, id_operatore_assegnazione)
-                 VALUES ($1,$2,$3,$4)`,
-                [id, assignment.id_collaboratore, assignment.mansione, req.user!.id],
+          const previousPhase = workStatePhase(previous.stato);
+          let completedAssignments = 0;
+          if (stato === 'finito' && previous.stato !== 'finito') {
+            for (const phase of ['cad', 'rifinitura', 'altro'] as const) {
+              completedAssignments += await completeActivePhaseAssignments(
+                client, id, phase, req.user!.id,
               );
             }
+          } else if (previousPhase && previous.stato !== stato) {
+            completedAssignments = await completeActivePhaseAssignments(
+              client, id, previousPhase, req.user!.id,
+            );
+          }
+          const result = await client.query(
+            `UPDATE lavori
+                SET stato = $1::stato_lavoro,
+                    finito_at = CASE
+                      WHEN $1::stato_lavoro = 'finito' AND stato <> 'finito' THEN NOW()
+                      WHEN $1::stato_lavoro <> 'finito' THEN NULL
+                      ELSE finito_at
+                    END
+              WHERE id = $2
+              RETURNING *`,
+            [stato, id],
+          );
+          if (assignmentResult) {
+            await logAudit(client, {
+              idOperatore: req.user!.id,
+              azione: 'UPDATE_ASSEGNAZIONI_LAVORO',
+              entita: 'lavori',
+              idEntita: id,
+              dettagli: {
+                correnti: assignmentResult.rows.length,
+                rimosse: assignmentResult.removed,
+                eventi: assignmentResult.events,
+              },
+            });
           }
           await logAudit(client, {
             idOperatore: req.user!.id,
-            azione: 'UPDATE_ASSEGNAZIONI_LAVORO',
+            azione: 'CAMBIO_STATO_LAVORO',
             entita: 'lavori',
             idEntita: id,
-            dettagli: { attive: normalized.length, rimosse: toRemove.length },
+            dettagli: {
+              da: previous.stato,
+              a: stato,
+              incarichi_completati: completedAssignments,
+            },
           });
-        }
-        await logAudit(client, {
-          idOperatore: req.user!.id,
-          azione: 'CAMBIO_STATO_LAVORO',
-          entita: 'lavori',
-          idEntita: id,
-          dettagli: { da: prev.stato, a: stato },
+          return result.rows[0];
         });
-        return result.rows[0];
-      });
-      if (!updated) return reply.code(404).send({ error: 'Lavoro non trovato' });
-      return updated;
+        if (!updated) return reply.code(404).send({ error: 'Lavoro non trovato' });
+        if ('archived' in updated) {
+          return reply.code(409).send({ error: 'Ripristina il lavoro dall’archivio prima di cambiarne la fase' });
+        }
+        return updated;
+      } catch (error) {
+        if (error instanceof AssignmentValidationError) {
+          return reply.code(400).send({ error: error.message });
+        }
+        if ((error as { code?: string }).code === '23505') {
+          return reply.code(409).send({ error: 'Questa assegnazione è già presente nel lavoro' });
+        }
+        throw error;
+      }
     },
   );
+
+  app.post('/:id/archivia', { schema: { params: IdParams } }, async (req, reply) => {
+    const { id } = req.params as { id: number };
+    const result = await req.pool.query(
+      `UPDATE lavori
+          SET archiviato_at = NOW(), id_operatore_archiviazione = $2
+        WHERE id = $1 AND deleted_at IS NULL AND archiviato_at IS NULL
+          AND stato = 'finito'
+        RETURNING id, archiviato_at`,
+      [id, req.user!.id],
+    );
+    if (!result.rows[0]) {
+      const exists = await req.pool.query<{ stato: string; archiviato_at: string | null }>(
+        `SELECT stato, archiviato_at FROM lavori WHERE id = $1 AND deleted_at IS NULL`,
+        [id],
+      );
+      if (!exists.rows[0]) return reply.code(404).send({ error: 'Lavoro non trovato' });
+      if (exists.rows[0].archiviato_at) return reply.code(409).send({ error: 'Il lavoro è già archiviato' });
+      return reply.code(409).send({ error: 'È possibile archiviare soltanto un lavoro finito' });
+    }
+    await logAudit(req.pool, {
+      idOperatore: req.user!.id,
+      azione: 'ARCHIVIA_LAVORO',
+      entita: 'lavori',
+      idEntita: id,
+    });
+    return result.rows[0];
+  });
+
+  app.post('/:id/ripristina', { schema: { params: IdParams } }, async (req, reply) => {
+    const { id } = req.params as { id: number };
+    const result = await req.pool.query(
+      `UPDATE lavori
+          SET archiviato_at = NULL, id_operatore_archiviazione = NULL
+        WHERE id = $1 AND deleted_at IS NULL AND archiviato_at IS NOT NULL
+        RETURNING id, stato`,
+      [id],
+    );
+    if (!result.rows[0]) return reply.code(404).send({ error: 'Lavoro archiviato non trovato' });
+    await logAudit(req.pool, {
+      idOperatore: req.user!.id,
+      azione: 'RIPRISTINA_LAVORO',
+      entita: 'lavori',
+      idEntita: id,
+    });
+    return result.rows[0];
+  });
 
   app.delete('/:id', { schema: { params: IdParams } }, async (req, reply) => {
     const { id } = req.params as { id: number };
@@ -552,19 +722,13 @@ export async function lavoriRoutes(app: FastifyInstance) {
         [id],
       );
       if (result.rowCount === 0) return null;
-      const assignments = await client.query(
-        `UPDATE lavori_assegnazioni
-         SET rimosso_at = NOW(), id_operatore_rimozione = $1
-         WHERE id_lavoro = $2 AND rimosso_at IS NULL
-         RETURNING id`,
-        [req.user!.id, id],
-      );
+      const assignments = await syncJobAssignments(client, id, [], req.user!.id);
       await logAudit(client, {
         idOperatore: req.user!.id,
         azione: 'DELETE_LAVORO',
         entita: 'lavori',
         idEntita: id,
-        dettagli: { assegnazioni_chiuse: assignments.rowCount ?? 0 },
+        dettagli: { assegnazioni_chiuse: assignments.removed },
       });
       return true;
     });
@@ -599,89 +763,76 @@ export async function lavoriRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get(
+    '/:id/assegnazioni-storico',
+    { schema: { params: IdParams } },
+    async (req) => {
+      const { id } = req.params as { id: number };
+      const result = await req.pool.query(
+        `SELECT e.id::int AS id, e.id_assegnazione::int AS id_assegnazione,
+                e.id_collaboratore::int AS id_collaboratore,
+                c.nome AS collaboratore_nome, e.fase, e.mansione,
+                e.evento, e.created_at, e.id_operatore::int,
+                o.nome AS operatore_nome
+           FROM lavori_assegnazioni_eventi e
+           JOIN collaboratori c ON c.id = e.id_collaboratore
+           LEFT JOIN operatori o ON o.id = e.id_operatore
+          WHERE e.id_lavoro = $1
+          ORDER BY e.created_at DESC, e.id DESC
+          LIMIT 500`,
+        [id],
+      );
+      return result.rows;
+    },
+  );
+
   app.put(
     '/:id/assegnazioni',
     { schema: { params: IdParams, body: AssegnazioniBody } },
     async (req, reply) => {
       const { id } = req.params as { id: number };
-      const { assegnazioni } = req.body as {
-        assegnazioni: Array<{ id_collaboratore: number; mansione: string }>;
-      };
-      const desired = assegnazioni.map((a) => ({
-        id_collaboratore: a.id_collaboratore,
-        mansione: a.mansione.trim(),
-      }));
-      if (desired.some((a) => a.mansione.length === 0)) {
-        return reply.code(400).send({ error: 'La mansione non può essere vuota' });
-      }
-      const desiredKeys = new Set(desired.map((a) => `${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
-      if (desiredKeys.size !== desired.length) {
-        return reply.code(400).send({ error: 'La stessa assegnazione è presente più volte' });
+      const { assegnazioni } = req.body as { assegnazioni: AssignmentInput[] };
+      if (!await validateCollaborators(req.pool, assegnazioni)) {
+        return reply.code(400).send({ error: 'Uno o più collaboratori non sono disponibili' });
       }
 
-      const collaboratorIds = [...new Set(desired.map((a) => a.id_collaboratore))];
-      if (collaboratorIds.length > 0) {
-        const active = await req.pool.query<{ id: number }>(
-          `SELECT id FROM collaboratori WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL`,
-          [collaboratorIds],
-        );
-        if (active.rows.length !== collaboratorIds.length) {
-          return reply.code(400).send({ error: 'Uno o più collaboratori non sono disponibili' });
-        }
-      }
-
-      const rows = await withTx(req.pool, async (client) => {
-        const exists = await client.query(
-          `SELECT 1 FROM lavori WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
-          [id],
-        );
-        if (exists.rowCount === 0) return null;
-        const current = await client.query<{ id: number; id_collaboratore: number; mansione: string }>(
-          `SELECT id, id_collaboratore, mansione FROM lavori_assegnazioni
-           WHERE id_lavoro = $1 AND rimosso_at IS NULL FOR UPDATE`,
-          [id],
-        );
-        const currentKeys = new Set(current.rows.map((a) => `${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
-        const toRemove = current.rows.filter((a) => !desiredKeys.has(`${a.id_collaboratore}:${a.mansione.toLocaleLowerCase('it')}`));
-        if (toRemove.length > 0) {
-          await client.query(
-            `UPDATE lavori_assegnazioni
-             SET rimosso_at = NOW(), id_operatore_rimozione = $1
-             WHERE id = ANY($2::bigint[])`,
-            [req.user!.id, toRemove.map((a) => a.id)],
+      try {
+        const synced = await withTx(req.pool, async (client) => {
+          const exists = await client.query<{ archiviato_at: string | null }>(
+            `SELECT archiviato_at FROM lavori
+              WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+            [id],
           );
-        }
-        for (const assignment of desired) {
-          const key = `${assignment.id_collaboratore}:${assignment.mansione.toLocaleLowerCase('it')}`;
-          if (!currentKeys.has(key)) {
-            await client.query(
-              `INSERT INTO lavori_assegnazioni
-                 (id_lavoro, id_collaboratore, mansione, id_operatore_assegnazione)
-               VALUES ($1,$2,$3,$4)`,
-              [id, assignment.id_collaboratore, assignment.mansione, req.user!.id],
-            );
-          }
-        }
-        await logAudit(client, {
-          idOperatore: req.user!.id,
-          azione: 'UPDATE_ASSEGNAZIONI_LAVORO',
-          entita: 'lavori',
-          idEntita: id,
-          dettagli: { attive: desired.length, rimosse: toRemove.length },
+          if (!exists.rows[0]) return null;
+          if (exists.rows[0].archiviato_at) return { archived: true };
+          const result = await syncJobAssignments(client, id, assegnazioni, req.user!.id);
+          await logAudit(client, {
+            idOperatore: req.user!.id,
+            azione: 'UPDATE_ASSEGNAZIONI_LAVORO',
+            entita: 'lavori',
+            idEntita: id,
+            dettagli: {
+              correnti: result.rows.length,
+              rimosse: result.removed,
+              eventi: result.events,
+            },
+          });
+          return result;
         });
-        const fresh = await client.query(
-          `SELECT a.id, a.id_collaboratore, c.nome AS collaboratore_nome,
-                  a.mansione, a.assegnato_at, a.rimosso_at
-           FROM lavori_assegnazioni a
-           JOIN collaboratori c ON c.id = a.id_collaboratore
-           WHERE a.id_lavoro = $1 AND a.rimosso_at IS NULL
-           ORDER BY a.assegnato_at DESC`,
-          [id],
-        );
-        return fresh.rows;
-      });
-      if (!rows) return reply.code(404).send({ error: 'Lavoro non trovato' });
-      return rows;
+        if (!synced) return reply.code(404).send({ error: 'Lavoro non trovato' });
+        if ('archived' in synced) {
+          return reply.code(409).send({ error: 'Ripristina il lavoro prima di modificarne i collaboratori' });
+        }
+        return synced.rows;
+      } catch (error) {
+        if (error instanceof AssignmentValidationError) {
+          return reply.code(400).send({ error: error.message });
+        }
+        if ((error as { code?: string }).code === '23505') {
+          return reply.code(409).send({ error: 'Questa assegnazione è già presente nel lavoro' });
+        }
+        throw error;
+      }
     },
   );
 
@@ -719,11 +870,12 @@ export async function lavoriRoutes(app: FastifyInstance) {
       }
 
       const result = await withTx(req.pool, async (client) => {
-        const lavoroExists = await client.query(
-          `SELECT 1 FROM lavori WHERE id = $1 AND deleted_at IS NULL`,
+        const lavoroExists = await client.query<{ archiviato_at: string | null }>(
+          `SELECT archiviato_at FROM lavori WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
           [id],
         );
         if (lavoroExists.rowCount === 0) return null;
+        if (lavoroExists.rows[0]!.archiviato_at) return { archived: true };
 
         await client.query(`DELETE FROM lavori_strutture WHERE id_lavoro = $1`, [id]);
         for (const s of strutture) {
@@ -742,6 +894,9 @@ export async function lavoriRoutes(app: FastifyInstance) {
       });
 
       if (result === null) return reply.code(404).send({ error: 'Lavoro non trovato' });
+      if (!Array.isArray(result)) {
+        return reply.code(409).send({ error: 'Ripristina il lavoro dall’archivio prima di modificarlo' });
+      }
 
       await logAudit(req.pool, {
         idOperatore: req.user!.id,
@@ -767,11 +922,12 @@ export async function lavoriRoutes(app: FastifyInstance) {
       const b = req.body as MaterialUsageInput;
 
       const usage = await withTx(req.pool, async (client) => {
-        const lavoroExists = await client.query(
-          `SELECT 1 FROM lavori WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+        const lavoroExists = await client.query<{ archiviato_at: string | null }>(
+          `SELECT archiviato_at FROM lavori WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
           [id],
         );
         if (lavoroExists.rowCount === 0) return null;
+        if (lavoroExists.rows[0]!.archiviato_at) return { archived: true };
 
         const created = await registerMaterialUsage(client, {
           ...b,
@@ -793,6 +949,9 @@ export async function lavoriRoutes(app: FastifyInstance) {
         return created;
       });
       if (!usage) return reply.code(404).send({ error: 'Lavoro non trovato' });
+      if ('archived' in usage) {
+        return reply.code(409).send({ error: 'Ripristina il lavoro dall’archivio prima di aggiungere materiali' });
+      }
 
       return reply.code(201).send(usage);
     },

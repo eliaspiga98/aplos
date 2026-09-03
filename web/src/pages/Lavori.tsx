@@ -1,20 +1,31 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getList, type Lavoro, type StatoLavoro } from '../api';
+import { api, ApiError, getList, type Lavoro, type StatoLavoro } from '../api';
 import { LavoroFormModal } from '../components/LavoroFormModal';
 import { LavoroDetailModal } from '../components/LavoroDetailModal';
 import { StatoLavoroSelect } from '../components/StatoLavoroSelect';
 import { Pager } from '../components/Pager';
 import { ExportCsvButton } from '../components/ExportCsvButton';
 import { LavoriKanban } from '../components/LavoriKanban';
+import { useToast } from '../components/Toaster';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { formatDate } from '../utils/format';
+import { formatDate, formatDateTime, labelStatoLavoro } from '../utils/format';
 import { useAuth } from '../auth';
 
 const PAGE_SIZE = 50;
+const STATI: StatoLavoro[] = [
+  'in_attesa', 'in_corso_cad', 'attesa_rifinitura',
+  'in_corso_rifinitura', 'in_prova', 'finito',
+];
+
+interface ArchiveConfig {
+  giorni: number;
+  lavori_archiviati: number;
+}
 
 export function LavoriPage() {
   const { user } = useAuth();
+  const { push } = useToast();
   const viewKey = user?.id ? `aplos:lavori-view:${user.id}` : null;
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -22,10 +33,13 @@ export function LavoriPage() {
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState(searchParams.get('q') ?? '');
   const [stato, setStato] = useState<string>(searchParams.get('stato') ?? '');
+  const [archivio, setArchivio] = useState(searchParams.get('archivio') === '1');
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  // Vista: priorità query string > preferenza salvata per l'utente > default kanban
+  const [archiveConfig, setArchiveConfig] = useState<ArchiveConfig | null>(null);
+  const [archiveDays, setArchiveDays] = useState('15');
+  const [savingArchiveDays, setSavingArchiveDays] = useState(false);
   const [view, setView] = useState<'tabella' | 'kanban'>(() => {
     const fromUrl = searchParams.get('view');
     if (fromUrl === 'tabella' || fromUrl === 'kanban') return fromUrl;
@@ -36,12 +50,14 @@ export function LavoriPage() {
     return 'kanban';
   });
 
-  // Persisti la vista per l'utente
+  const effectiveView = archivio ? 'tabella' : view;
+  const debouncedQ = useDebouncedValue(q, 250);
+  const openParam = Number(searchParams.get('open'));
+  const openId = Number.isInteger(openParam) && openParam > 0 ? openParam : null;
+
   useEffect(() => {
     if (viewKey) localStorage.setItem(viewKey, view);
   }, [view, viewKey]);
-  const openParam = Number(searchParams.get('open'));
-  const openId = Number.isInteger(openParam) && openParam > 0 ? openParam : null;
 
   const setOpenId = useCallback((id: number | null) => {
     setSearchParams((current) => {
@@ -52,64 +68,141 @@ export function LavoriPage() {
     }, { replace: true });
   }, [setSearchParams]);
 
-  const debouncedQ = useDebouncedValue(q, 250);
+  const fetchArchiveConfig = useCallback(async () => {
+    try {
+      const config = await api.get<ArchiveConfig>('/api/lavori/archivio-config');
+      setArchiveConfig(config);
+      setArchiveDays(String(config.giorni));
+    } catch {
+      setArchiveConfig(null);
+    }
+  }, []);
 
   const fetchLavori = useCallback(async (
     query: string,
     statoFilter: string,
     off: number,
     useView: 'tabella' | 'kanban',
+    archived: boolean,
   ) => {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     if (statoFilter) params.set('stato', statoFilter);
-    // In Kanban prendiamo molti più lavori (devono entrare tutti nelle 4
-    // colonne); in tabella usiamo la paginazione standard.
+    if (archived) params.set('archivio', 'true');
     params.set('limit', useView === 'kanban' ? '500' : String(PAGE_SIZE));
     params.set('offset', useView === 'kanban' ? '0' : String(off));
     setLoading(true);
     try {
-      const { rows, total } = await getList<Lavoro>(`/api/lavori?${params}`);
-      setLavori(rows);
-      setTotal(total);
+      const result = await getList<Lavoro>(`/api/lavori?${params}`);
+      setLavori(result.rows);
+      setTotal(result.total);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Reset offset quando cambiano i filtri (non quando cambia solo offset).
+  useEffect(() => {
+    void fetchArchiveConfig();
+  }, [fetchArchiveConfig]);
+
   useEffect(() => {
     setOffset(0);
-  }, [debouncedQ, stato]);
+  }, [debouncedQ, stato, archivio]);
 
   useEffect(() => {
-    void fetchLavori(debouncedQ, stato, offset, view);
-  }, [debouncedQ, stato, offset, fetchLavori, view]);
+    void fetchLavori(debouncedQ, stato, offset, effectiveView, archivio);
+  }, [debouncedQ, stato, offset, fetchLavori, effectiveView, archivio]);
+
+  function switchArchive(next: boolean) {
+    setArchivio(next);
+    setStato(next ? 'finito' : '');
+    setSearchParams((current) => {
+      const params = new URLSearchParams(current);
+      if (next) params.set('archivio', '1');
+      else params.delete('archivio');
+      params.delete('stato');
+      params.delete('open');
+      return params;
+    }, { replace: true });
+  }
+
+  function refresh() {
+    void fetchLavori(debouncedQ, stato, offset, effectiveView, archivio);
+    void fetchArchiveConfig();
+  }
+
+  async function saveArchiveDays(e: React.FormEvent) {
+    e.preventDefault();
+    const giorni = Number(archiveDays);
+    if (!Number.isInteger(giorni) || giorni < 0 || giorni > 365) {
+      push('Inserisci un numero di giorni compreso tra 0 e 365.', 'error');
+      return;
+    }
+    setSavingArchiveDays(true);
+    try {
+      await api.put('/api/lavori/archivio-config', { giorni });
+      push(giorni === 0 ? 'Archiviazione automatica disattivata' : `Archiviazione automatica impostata a ${giorni} giorni`, 'success');
+      refresh();
+    } catch (err) {
+      push(err instanceof ApiError ? err.message : 'Errore', 'error');
+    } finally {
+      setSavingArchiveDays(false);
+    }
+  }
 
   function applyStato(id: number, next: StatoLavoro) {
-    setLavori((curr) => curr.map((l) => (l.id === id ? { ...l, stato: next } : l)));
+    setLavori((current) => current.map((lavoro) => lavoro.id === id ? { ...lavoro, stato: next } : lavoro));
   }
 
   return (
     <div className="page">
       <header className="page-header">
-        <h1>Lavori</h1>
+        <div>
+          <h1>{archivio ? 'Archivio lavori' : 'Lavori'}</h1>
+          {archivio && <p className="page-subtitle">I lavori archiviati restano sempre recuperabili.</p>}
+        </div>
         <div className="page-actions">
           <ExportCsvButton
             path="/api/lavori/csv"
             params={(() => {
-              const p = new URLSearchParams();
-              if (debouncedQ) p.set('q', debouncedQ);
-              if (stato) p.set('stato', stato);
-              return p;
+              const params = new URLSearchParams();
+              if (debouncedQ) params.set('q', debouncedQ);
+              if (stato) params.set('stato', stato);
+              if (archivio) params.set('archivio', 'true');
+              return params;
             })()}
           />
-          <button type="button" onClick={() => setShowCreate(true)}>Nuovo lavoro</button>
+          {!archivio && <button type="button" onClick={() => setShowCreate(true)}>Nuovo lavoro</button>}
         </div>
       </header>
 
+      <div className="workflow-scope-switch" aria-label="Ambito lavori">
+        <button type="button" className={!archivio ? 'active' : ''} onClick={() => switchArchive(false)}>
+          Lavori attivi
+        </button>
+        <button type="button" className={archivio ? 'active' : ''} onClick={() => switchArchive(true)}>
+          Archivio{archiveConfig ? ` (${archiveConfig.lavori_archiviati})` : ''}
+        </button>
+      </div>
+
+      {!archivio && user?.ruolo === 'admin' && archiveConfig && (
+        <form className="archive-settings" onSubmit={saveArchiveDays}>
+          <div>
+            <strong>Archiviazione automatica</strong>
+            <span>I lavori finiti vengono archiviati dopo il periodo scelto. Usa 0 per disattivarla.</span>
+          </div>
+          <label>
+            Giorni
+            <input type="number" min="0" max="365" value={archiveDays} onChange={(e) => setArchiveDays(e.target.value)} />
+          </label>
+          <button type="submit" className="btn-secondary" disabled={savingArchiveDays}>
+            {savingArchiveDays ? 'Salvataggio…' : 'Salva'}
+          </button>
+        </form>
+      )}
+
       <div className="filters">
-        <div className="view-switch">
+        {!archivio && <div className="view-switch">
           <button
             type="button"
             className={view === 'tabella' ? 'view-switch-btn view-switch-btn--active' : 'view-switch-btn'}
@@ -124,93 +217,85 @@ export function LavoriPage() {
           >
             Kanban
           </button>
-        </div>
+        </div>}
         <input
           type="search"
           placeholder="Cerca paziente, dottore o ID…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        {view === 'tabella' && (
+        {effectiveView === 'tabella' && !archivio && (
           <select value={stato} onChange={(e) => setStato(e.target.value)}>
-            <option value="">Tutti gli stati</option>
-            <option value="in_attesa">In attesa</option>
-            <option value="in_corso">In corso</option>
-            <option value="in_prova">In prova</option>
-            <option value="finito">Finito</option>
+            <option value="">Tutte le fasi</option>
+            {STATI.map((value) => <option key={value} value={value}>{labelStatoLavoro(value)}</option>)}
           </select>
         )}
       </div>
 
-      {loading ? (
-        <p>Caricamento…</p>
-      ) : view === 'kanban' ? (
+      {loading ? <p>Caricamento…</p> : effectiveView === 'kanban' ? (
         <LavoriKanban
           lavori={lavori}
           onChange={setLavori}
-          onOpen={(id) => setOpenId(id)}
-          onRefresh={() => void fetchLavori(debouncedQ, stato, offset, view)}
+          onOpen={setOpenId}
+          onRefresh={refresh}
         />
-      ) : (
-        <>
-          <table className="table table--clickable">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Paziente</th>
-                <th>Dottore</th>
-                <th>Collaboratori</th>
-                <th>Entrata</th>
-                <th>Consegna</th>
-                <th>Stato</th>
+      ) : <>
+        <table className="table table--clickable">
+          <thead>
+            <tr>
+              <th>ID</th><th>Paziente</th><th>Dottore</th><th>Collaboratori</th>
+              <th>Entrata</th><th>Consegna</th><th>{archivio ? 'Archiviato il' : 'Fase'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lavori.map((lavoro) => (
+              <tr key={lavoro.id} onClick={() => setOpenId(lavoro.id)}>
+                <td>#{lavoro.id}</td>
+                <td>{lavoro.nome_paziente}</td>
+                <td>
+                  {lavoro.dottore_nome}
+                  {lavoro.dottore_studio ? <span className="muted"> — {lavoro.dottore_studio}</span> : null}
+                </td>
+                <td>{lavoro.assegnazioni.length > 0
+                  ? lavoro.assegnazioni.map((assignment) => (
+                    <span className={`assignment-chip assignment-chip--${assignment.stato_incarico}`} key={assignment.id}>
+                      {assignment.collaboratore_nome}
+                    </span>
+                  ))
+                  : <span className="muted">—</span>}
+                </td>
+                <td>{formatDate(lavoro.data_entrata)}</td>
+                <td>{formatDate(lavoro.data_consegna)}</td>
+                <td>{archivio ? formatDateTime(lavoro.archiviato_at) : (
+                  <StatoLavoroSelect
+                    idLavoro={lavoro.id}
+                    stato={lavoro.stato}
+                    assegnazioni={lavoro.assegnazioni}
+                    onChange={(next) => {
+                      applyStato(lavoro.id, next);
+                      refresh();
+                    }}
+                  />
+                )}</td>
               </tr>
-            </thead>
-            <tbody>
-              {lavori.map((l) => (
-                <tr key={l.id} onClick={() => setOpenId(l.id)}>
-                  <td>#{l.id}</td>
-                  <td>{l.nome_paziente}</td>
-                  <td>
-                    {l.dottore_nome}
-                    {l.dottore_studio ? <span className="muted"> — {l.dottore_studio}</span> : null}
-                  </td>
-                  <td>{l.assegnazioni.length > 0
-                    ? l.assegnazioni.map((a) => `${a.collaboratore_nome} (${a.mansione})`).join(', ')
-                    : <span className="muted">—</span>}
-                  </td>
-                  <td>{formatDate(l.data_entrata)}</td>
-                  <td>{formatDate(l.data_consegna)}</td>
-                  <td>
-                    <StatoLavoroSelect
-                      idLavoro={l.id}
-                      stato={l.stato}
-                      assegnazioni={l.assegnazioni}
-                      onChange={(next) => {
-                        applyStato(l.id, next);
-                        void fetchLavori(debouncedQ, stato, offset, view);
-                      }}
-                    />
-                  </td>
-                </tr>
-              ))}
-              {lavori.length === 0 && (
-                <tr><td colSpan={7} className="muted">Nessun lavoro</td></tr>
-              )}
-            </tbody>
-          </table>
-          <Pager total={total} offset={offset} limit={PAGE_SIZE} onChange={setOffset} />
-        </>
-      )}
+            ))}
+            {lavori.length === 0 && <tr><td colSpan={7} className="muted">
+              {archivio ? 'Nessun lavoro archiviato' : 'Nessun lavoro'}
+            </td></tr>}
+          </tbody>
+        </table>
+        <Pager total={total} offset={offset} limit={PAGE_SIZE} onChange={setOffset} />
+      </>}
 
       <LavoroFormModal
         open={showCreate}
         onClose={() => setShowCreate(false)}
-        onSaved={() => void fetchLavori(debouncedQ, stato, offset, view)}
+        onSaved={refresh}
       />
       <LavoroDetailModal
         idLavoro={openId}
         onClose={() => setOpenId(null)}
-        onChanged={() => void fetchLavori(debouncedQ, stato, offset, view)}
+        onChanged={refresh}
       />
     </div>
   );

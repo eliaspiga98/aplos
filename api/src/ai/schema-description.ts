@@ -19,13 +19,16 @@ dottori(id, nome, studio, telefono, email, indirizzo, partita_iva, codice_fiscal
   e cognome, usa \`nome ILIKE '%Mario Rossi%'\` su tutta la stringa,
   NON \`nome ILIKE '%Mario%' AND cognome ILIKE '%Rossi%'\`.
 
-lavori(id, id_dottore, nome_paziente, data_entrata, data_consegna, stato, scala_colori, tipologia_lavoro, note_istruzioni, id_operatore_creazione, deleted_at, created_at, updated_at)
-  stato: 'in_attesa' | 'in_corso' | 'in_prova' | 'finito'
+lavori(id, id_dottore, nome_paziente, data_entrata, data_consegna, stato, scala_colori, tipologia_lavoro, note_istruzioni, id_operatore_creazione, finito_at, archiviato_at, deleted_at, created_at, updated_at)
+  stato: 'in_attesa' | 'in_corso_cad' | 'attesa_rifinitura' | 'in_corso_rifinitura' | 'in_prova' | 'finito'
   id_dottore -> dottori(id)
 
 collaboratori(id, nome, telefono, email, mansioni, note, deleted_at, created_at, updated_at)
-lavori_assegnazioni(id, id_lavoro, id_collaboratore, mansione, assegnato_at, rimosso_at, id_operatore_assegnazione, id_operatore_rimozione)
+lavori_assegnazioni(id, id_lavoro, id_collaboratore, fase, mansione, stato_incarico, assegnato_at, completato_at, rimosso_at, id_operatore_assegnazione, id_operatore_stato, id_operatore_rimozione)
+  fase: 'cad' | 'rifinitura' | 'altro'; stato_incarico: 'attivo' | 'completato' | 'rimosso'
   id_lavoro -> lavori(id); id_collaboratore -> collaboratori(id)
+lavori_assegnazioni_eventi(id, id_assegnazione, id_lavoro, id_collaboratore, fase, mansione, evento, id_operatore, created_at)
+  evento: 'assegnato' | 'completato' | 'riattivato' | 'modificato' | 'rimosso'
 
 macchinari(id, nome, marca, modello, matricola, ubicazione, note, deleted_at, created_at, updated_at)
 manutenzioni_programmate(id, id_macchinario, titolo, descrizione, prossima_scadenza, preavviso_giorni, ricorrenza_valore, ricorrenza_unita, attiva, deleted_at)
@@ -53,11 +56,12 @@ REGOLE DI INTERROGAZIONE:
 - Soft delete (\`deleted_at IS NULL\`) ESISTE SOLO su: operatori, dottori,
   lavori, materiali, depositi, collaboratori, macchinari e manutenzioni_programmate.
 - NON usare deleted_at su: lavori_strutture, lavori_allegati,
-  lavori_materiali, lavori_assegnazioni, manutenzioni_interventi,
+  lavori_materiali, lavori_assegnazioni, lavori_assegnazioni_eventi, manutenzioni_interventi,
   audit_log (sono tabelle immutabili o di
   collegamento, non hanno la colonna).
 - Per "in giacenza" dei materiali: \`stato_utilizzo <> 'esaurito' AND deleted_at IS NULL\`.
-- Per "lavori attivi": \`stato <> 'finito' AND l.deleted_at IS NULL\`.
+- Per "lavori attivi": \`stato <> 'finito' AND l.deleted_at IS NULL AND l.archiviato_at IS NULL\`.
+- Per i lavori non archiviati aggiungi \`l.archiviato_at IS NULL\`; usa \`IS NOT NULL\` solo se l'utente chiede esplicitamente l'archivio.
 - Le date sono di tipo DATE; per "oggi" usa \`CURRENT_DATE\`.
 - I nomi dei colori (es. A2) sono salvati come testo nel campo \`colore\`.
 - Il colore del lavoro è \`scala_colori\` e usa la scala VITA: BL1-BL3,

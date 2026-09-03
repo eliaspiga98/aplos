@@ -46,11 +46,14 @@ async function main() {
     //    DB ha id arbitrari che non esistono nel demo).
     await c.query(`
       ALTER TABLE lavori DROP CONSTRAINT IF EXISTS lavori_id_operatore_creazione_fkey;
+      ALTER TABLE lavori DROP CONSTRAINT IF EXISTS lavori_id_operatore_archiviazione_fkey;
       ALTER TABLE lavori_materiali DROP CONSTRAINT IF EXISTS lavori_materiali_id_operatore_fkey;
       ALTER TABLE lavori_allegati DROP CONSTRAINT IF EXISTS lavori_allegati_id_operatore_fkey;
       ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_log_id_operatore_fkey;
       ALTER TABLE lavori_assegnazioni DROP CONSTRAINT IF EXISTS lavori_assegnazioni_id_operatore_assegnazione_fkey;
       ALTER TABLE lavori_assegnazioni DROP CONSTRAINT IF EXISTS lavori_assegnazioni_id_operatore_rimozione_fkey;
+      ALTER TABLE lavori_assegnazioni DROP CONSTRAINT IF EXISTS lavori_assegnazioni_id_operatore_stato_fkey;
+      ALTER TABLE lavori_assegnazioni_eventi DROP CONSTRAINT IF EXISTS lavori_assegnazioni_eventi_id_operatore_fkey;
       ALTER TABLE manutenzioni_interventi DROP CONSTRAINT IF EXISTS manutenzioni_interventi_id_operatore_fkey;
       ALTER TABLE manutenzioni_notifiche_lette DROP CONSTRAINT IF EXISTS manutenzioni_notifiche_lette_id_operatore_fkey;
     `);
@@ -60,7 +63,7 @@ async function main() {
       TRUNCATE
         audit_log, lavori_allegati, lavori_materiali, lavori_strutture,
         manutenzioni_notifiche_lette, manutenzioni_interventi, manutenzioni_programmate,
-        macchinari, lavori_assegnazioni, collaboratori,
+        macchinari, lavori_assegnazioni_eventi, lavori_assegnazioni, collaboratori,
         lavori, materiali, depositi, dottori, operatori
       RESTART IDENTITY CASCADE
     `);
@@ -142,16 +145,16 @@ async function main() {
       { dottore: 3, paziente: 'Maria Esposito',   entrata: 0,  consegna: 18, stato: 'in_attesa', colore: 'B1', tipologia: 'Faccette 6 elementi', istruzioni: 'Estetica anteriori, alta lucidatura', strutture: [{ tipo: 'corona_singola', denti: [13] }, { tipo: 'corona_singola', denti: [12] }, { tipo: 'corona_singola', denti: [11] }, { tipo: 'corona_singola', denti: [21] }, { tipo: 'corona_singola', denti: [22] }, { tipo: 'corona_singola', denti: [23] }] },
       { dottore: 4, paziente: 'Andrea Ferrari',   entrata: 0,  consegna: 21, stato: 'in_attesa', colore: 'A3.5', tipologia: 'Provvisorio fresato PMMA', strutture: [{ tipo: 'ponte', denti: [14, 15, 16] }] },
 
-      // in_corso (9)
-      { dottore: 1, paziente: 'Carlo Greco',      entrata: -3, consegna: 5,  stato: 'in_corso',  colore: 'A2', tipologia: 'Corona zirconio',           strutture: [{ tipo: 'corona_singola', denti: [26] }] },
-      { dottore: 2, paziente: 'Elena Marchetti',  entrata: -4, consegna: 8,  stato: 'in_corso',  colore: 'A3', tipologia: 'Ponte 4 elementi posteriore',istruzioni: 'Pontic ridge-lap', strutture: [{ tipo: 'ponte', denti: [44, 45, 46, 47] }] },
-      { dottore: 3, paziente: 'Roberto Bruno',    entrata: -2, consegna: 6,  stato: 'in_corso',  colore: 'A1', tipologia: 'Corona singola anteriore',   strutture: [{ tipo: 'corona_singola', denti: [11] }] },
-      { dottore: 5, paziente: 'Sara Gallo',       entrata: -5, consegna: 4,  stato: 'in_corso',  colore: 'B2', tipologia: 'Inlay disilicato',           strutture: [{ tipo: 'corona_singola', denti: [25] }] },
-      { dottore: 1, paziente: 'Davide Costa',     entrata: -2, consegna: 9,  stato: 'in_corso',  colore: 'A2', tipologia: 'Ponte Maryland', istruzioni: 'Ali in metallo', strutture: [{ tipo: 'ponte', denti: [12, 11, 21] }] },
-      { dottore: 4, paziente: 'Francesca Rinaldi',entrata: -3, consegna: 10, stato: 'in_corso',  colore: 'A3', tipologia: 'Corona zirconio singola',    strutture: [{ tipo: 'corona_singola', denti: [37] }] },
-      { dottore: 6, paziente: 'Luigi Galli',      entrata: -6, consegna: 3,  stato: 'in_corso',  colore: 'A3.5', tipologia: 'Scheletrato Cr-Co',         strutture: [{ tipo: 'corona_singola', denti: [16] }, { tipo: 'corona_singola', denti: [26] }, { tipo: 'corona_singola', denti: [36] }, { tipo: 'corona_singola', denti: [46] }] },
-      { dottore: 2, paziente: 'Paola Vitale',     entrata: -4, consegna: 7,  stato: 'in_corso',  colore: 'B1', tipologia: 'Faccetta singola',           strutture: [{ tipo: 'corona_singola', denti: [21] }] },
-      { dottore: 5, paziente: 'Marco Riva',       entrata: -1, consegna: 11, stato: 'in_corso',  colore: 'A2', tipologia: 'Corona su impianto',         strutture: [{ tipo: 'corona_singola', denti: [36] }] },
+      // lavorazione CAD, attesa rifinitura e rifinitura (9)
+      { dottore: 1, paziente: 'Carlo Greco',      entrata: -3, consegna: 5,  stato: 'in_corso_cad',         colore: 'A2', tipologia: 'Corona zirconio',           strutture: [{ tipo: 'corona_singola', denti: [26] }] },
+      { dottore: 2, paziente: 'Elena Marchetti',  entrata: -4, consegna: 8,  stato: 'in_corso_cad',         colore: 'A3', tipologia: 'Ponte 4 elementi posteriore',istruzioni: 'Pontic ridge-lap', strutture: [{ tipo: 'ponte', denti: [44, 45, 46, 47] }] },
+      { dottore: 3, paziente: 'Roberto Bruno',    entrata: -2, consegna: 6,  stato: 'in_corso_cad',         colore: 'A1', tipologia: 'Corona singola anteriore',   strutture: [{ tipo: 'corona_singola', denti: [11] }] },
+      { dottore: 5, paziente: 'Sara Gallo',       entrata: -5, consegna: 4,  stato: 'in_corso_cad',         colore: 'B2', tipologia: 'Inlay disilicato',           strutture: [{ tipo: 'corona_singola', denti: [25] }] },
+      { dottore: 1, paziente: 'Davide Costa',     entrata: -2, consegna: 9,  stato: 'attesa_rifinitura',    colore: 'A2', tipologia: 'Ponte Maryland', istruzioni: 'Ali in metallo', strutture: [{ tipo: 'ponte', denti: [12, 11, 21] }] },
+      { dottore: 4, paziente: 'Francesca Rinaldi',entrata: -3, consegna: 10, stato: 'attesa_rifinitura',    colore: 'A3', tipologia: 'Corona zirconio singola',    strutture: [{ tipo: 'corona_singola', denti: [37] }] },
+      { dottore: 6, paziente: 'Luigi Galli',      entrata: -6, consegna: 3,  stato: 'attesa_rifinitura',    colore: 'A3.5', tipologia: 'Scheletrato Cr-Co',        strutture: [{ tipo: 'corona_singola', denti: [16] }, { tipo: 'corona_singola', denti: [26] }, { tipo: 'corona_singola', denti: [36] }, { tipo: 'corona_singola', denti: [46] }] },
+      { dottore: 2, paziente: 'Paola Vitale',     entrata: -4, consegna: 7,  stato: 'in_corso_rifinitura',  colore: 'B1', tipologia: 'Faccetta singola',           strutture: [{ tipo: 'corona_singola', denti: [21] }] },
+      { dottore: 5, paziente: 'Marco Riva',       entrata: -1, consegna: 11, stato: 'in_corso_rifinitura',  colore: 'A2', tipologia: 'Corona su impianto',         strutture: [{ tipo: 'corona_singola', denti: [36] }] },
 
       // in_prova (5) — fuori dal lab presso il dentista
       { dottore: 1, paziente: 'Beatrice Longo',   entrata: -8, consegna: 2,  stato: 'in_prova',  colore: 'A2', tipologia: 'Prova struttura ponte',      strutture: [{ tipo: 'ponte', denti: [13, 14, 15] }] },
@@ -174,10 +177,10 @@ async function main() {
       { dottore: 5, paziente: 'Nicola Ferri',     entrata: 0,  consegna: 15, stato: 'in_attesa', colore: 'A2', tipologia: 'Ponte 4 elementi posteriore', istruzioni: 'Antagonista in zirconio', strutture: [{ tipo: 'ponte', denti: [34, 35, 36, 37] }] },
       { dottore: 6, paziente: 'Cristina Sartori', entrata: 1,  consegna: 20, stato: 'in_attesa', colore: 'BL2', tipologia: 'Corona estetica monolitica', strutture: [{ tipo: 'corona_singola', denti: [22] }] },
 
-      // in_corso (+3)
-      { dottore: 2, paziente: 'Matteo Barbieri',  entrata: -2, consegna: 8,  stato: 'in_corso',  colore: 'A3', tipologia: 'Ponte 3 elementi anteriore',  strutture: [{ tipo: 'ponte', denti: [22, 23, 24] }] },
-      { dottore: 4, paziente: 'Lucia Fontana',    entrata: -3, consegna: 6,  stato: 'in_corso',  colore: 'A1', tipologia: 'Faccette 4 elementi', istruzioni: 'Riduzione vestibolare 0.5mm', strutture: [{ tipo: 'corona_singola', denti: [12] }, { tipo: 'corona_singola', denti: [11] }, { tipo: 'corona_singola', denti: [21] }, { tipo: 'corona_singola', denti: [22] }] },
-      { dottore: 3, paziente: 'Vincenzo Palermo', entrata: -5, consegna: 4,  stato: 'in_corso',  colore: 'A3.5', tipologia: 'Corona su impianto molare', strutture: [{ tipo: 'corona_singola', denti: [46] }] },
+      // altre fasi produttive (+3)
+      { dottore: 2, paziente: 'Matteo Barbieri',  entrata: -2, consegna: 8,  stato: 'in_corso_cad',         colore: 'A3', tipologia: 'Ponte 3 elementi anteriore',  strutture: [{ tipo: 'ponte', denti: [22, 23, 24] }] },
+      { dottore: 4, paziente: 'Lucia Fontana',    entrata: -3, consegna: 6,  stato: 'attesa_rifinitura',    colore: 'A1', tipologia: 'Faccette 4 elementi', istruzioni: 'Riduzione vestibolare 0.5mm', strutture: [{ tipo: 'corona_singola', denti: [12] }, { tipo: 'corona_singola', denti: [11] }, { tipo: 'corona_singola', denti: [21] }, { tipo: 'corona_singola', denti: [22] }] },
+      { dottore: 3, paziente: 'Vincenzo Palermo', entrata: -5, consegna: 4,  stato: 'in_corso_rifinitura',  colore: 'A3.5', tipologia: 'Corona su impianto molare', strutture: [{ tipo: 'corona_singola', denti: [46] }] },
 
       // in_prova (+2)
       { dottore: 5, paziente: 'Ilaria Colombo',   entrata: -7, consegna: 2,  stato: 'in_prova',  colore: 'B1', tipologia: 'Prova estetica faccetta',     strutture: [{ tipo: 'corona_singola', denti: [11] }] },
@@ -199,13 +202,15 @@ async function main() {
         `INSERT INTO lavori
            (id_dottore, nome_paziente, data_entrata, data_consegna, stato,
             scala_colori, tipologia_lavoro, note_istruzioni, id_operatore_creazione,
-            created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5::stato_lavoro, $6, $7, $8, $9, $10, $10)
+            finito_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5::stato_lavoro, $6, $7, $8, $9, $10, $11, $11)
          RETURNING id`,
         [
           l.dottore, l.paziente, dateOffset(l.entrata), dateOffset(l.consegna),
           l.stato, l.colore, l.tipologia, l.istruzioni ?? null,
-          operatoreCreazione, tsOffset(l.entrata, 9, 30),
+          operatoreCreazione,
+          l.stato === 'finito' ? tsOffset(l.consegna, 16, 0) : null,
+          tsOffset(l.entrata, 9, 30),
         ],
       );
       const idLavoro = lavoroResult.rows[0]!.id;
@@ -236,16 +241,34 @@ async function main() {
       const span = l.consegna - l.entrata;
       // Tempistica tipica nel laboratorio: subito in lavorazione, poi prova
       // qualche giorno prima della consegna, poi finito alla consegna.
-      const giornoInCorso = l.entrata + Math.max(1, Math.floor(span * 0.15));
-      const giornoInProva = l.entrata + Math.max(2, Math.floor(span * 0.7));
+      // Nei lavori ancora aperti tutte le fasi gia raggiunte devono risultare
+      // nel passato, anche quando la consegna e molto lontana.
+      const reachedDay = (candidate: number): number => l.stato === 'finito'
+        ? candidate
+        : Math.min(candidate, -1);
+      const giornoInCorso = reachedDay(l.entrata + Math.max(1, Math.floor(span * 0.15)));
+      const giornoAttesaRifinitura = reachedDay(l.entrata + Math.max(2, Math.floor(span * 0.35)));
+      const giornoRifinitura = reachedDay(l.entrata + Math.max(3, Math.floor(span * 0.5)));
+      const giornoInProva = reachedDay(l.entrata + Math.max(4, Math.floor(span * 0.7)));
       const giornoFinito  = l.consegna;
 
       const cambi: Array<{ da: string; a: string; quando: number; ora: number }> = [];
-      if (l.stato === 'in_corso' || l.stato === 'in_prova' || l.stato === 'finito') {
-        cambi.push({ da: 'in_attesa', a: 'in_corso', quando: giornoInCorso, ora: 10 });
+      const workflow = [
+        'in_attesa', 'in_corso_cad', 'attesa_rifinitura',
+        'in_corso_rifinitura', 'in_prova', 'finito',
+      ];
+      const faseFinale = workflow.indexOf(l.stato);
+      if (faseFinale >= 1) {
+        cambi.push({ da: 'in_attesa', a: 'in_corso_cad', quando: giornoInCorso, ora: 10 });
       }
-      if (l.stato === 'in_prova' || l.stato === 'finito') {
-        cambi.push({ da: 'in_corso', a: 'in_prova', quando: giornoInProva, ora: 14 });
+      if (faseFinale >= 2) {
+        cambi.push({ da: 'in_corso_cad', a: 'attesa_rifinitura', quando: giornoAttesaRifinitura, ora: 12 });
+      }
+      if (faseFinale >= 3) {
+        cambi.push({ da: 'attesa_rifinitura', a: 'in_corso_rifinitura', quando: giornoRifinitura, ora: 14 });
+      }
+      if (faseFinale >= 4) {
+        cambi.push({ da: 'in_corso_rifinitura', a: 'in_prova', quando: giornoInProva, ora: 16 });
       }
       if (l.stato === 'finito') {
         cambi.push({ da: 'in_prova', a: 'finito', quando: giornoFinito, ora: 16 });
@@ -263,30 +286,80 @@ async function main() {
         );
       }
 
-      // Consumo materiale (in_corso, in_prova, finito).
+      // Incarichi CAD/rifinitura e consumo materiale per i lavori avviati.
       if (l.stato !== 'in_attesa') {
         const idCollaboratore = ((idLavoro - 1) % 4) + 1;
-        await c.query(
+        const cadCompletato = faseFinale >= 2;
+        const cad = await c.query<{ id: number }>(
           `INSERT INTO lavori_assegnazioni
-             (id_lavoro, id_collaboratore, mansione, assegnato_at, id_operatore_assegnazione)
-           VALUES ($1,$2,'CAD',$3,$4)`,
-          [idLavoro, idCollaboratore, tsOffset(giornoInCorso, 10, 15), operatoreCreazione],
+             (id_lavoro, id_collaboratore, fase, mansione, stato_incarico,
+              assegnato_at, completato_at, id_operatore_assegnazione, id_operatore_stato)
+           VALUES ($1,$2,'cad','CAD',$3,$4,$5,$6,$6)
+           RETURNING id`,
+          [
+            idLavoro, idCollaboratore, cadCompletato ? 'completato' : 'attivo',
+            tsOffset(giornoInCorso, 10, 15),
+            cadCompletato ? tsOffset(giornoAttesaRifinitura, 12, 0) : null,
+            operatoreCreazione,
+          ],
         );
-        if (l.stato === 'in_prova' || l.stato === 'finito') {
-          const secondo = (idCollaboratore % 4) + 1;
+        await c.query(
+          `INSERT INTO lavori_assegnazioni_eventi
+             (id_assegnazione, id_lavoro, id_collaboratore, fase, mansione,
+              evento, id_operatore, created_at)
+           VALUES ($1,$2,$3,'cad','CAD','assegnato',$4,$5)`,
+          [cad.rows[0]!.id, idLavoro, idCollaboratore, operatoreCreazione, tsOffset(giornoInCorso, 10, 15)],
+        );
+        if (cadCompletato) {
           await c.query(
-            `INSERT INTO lavori_assegnazioni
-               (id_lavoro, id_collaboratore, mansione, assegnato_at, id_operatore_assegnazione)
-             VALUES ($1,$2,'Rifinitura',$3,$4)`,
-            [idLavoro, secondo, tsOffset(giornoInProva - 1, 9, 0), operatoreCreazione],
+            `INSERT INTO lavori_assegnazioni_eventi
+               (id_assegnazione, id_lavoro, id_collaboratore, fase, mansione,
+                evento, id_operatore, created_at)
+             VALUES ($1,$2,$3,'cad','CAD','completato',$4,$5)`,
+            [cad.rows[0]!.id, idLavoro, idCollaboratore, operatoreCreazione, tsOffset(giornoAttesaRifinitura, 12, 0)],
           );
+        }
+        if (faseFinale >= 3) {
+          const secondo = (idCollaboratore % 4) + 1;
+          const rifinituraCompletata = faseFinale >= 4;
+          const rifinitura = await c.query<{ id: number }>(
+            `INSERT INTO lavori_assegnazioni
+               (id_lavoro, id_collaboratore, fase, mansione, stato_incarico,
+                assegnato_at, completato_at, id_operatore_assegnazione, id_operatore_stato)
+             VALUES ($1,$2,'rifinitura','Rifinitura',$3,$4,$5,$6,$6)
+             RETURNING id`,
+            [
+              idLavoro, secondo, rifinituraCompletata ? 'completato' : 'attivo',
+              tsOffset(giornoRifinitura, 14, 15),
+              rifinituraCompletata ? tsOffset(giornoInProva, 16, 0) : null,
+              operatoreCreazione,
+            ],
+          );
+          await c.query(
+            `INSERT INTO lavori_assegnazioni_eventi
+               (id_assegnazione, id_lavoro, id_collaboratore, fase, mansione,
+                evento, id_operatore, created_at)
+             VALUES ($1,$2,$3,'rifinitura','Rifinitura','assegnato',$4,$5)`,
+            [rifinitura.rows[0]!.id, idLavoro, secondo, operatoreCreazione, tsOffset(giornoRifinitura, 14, 15)],
+          );
+          if (rifinituraCompletata) {
+            await c.query(
+              `INSERT INTO lavori_assegnazioni_eventi
+                 (id_assegnazione, id_lavoro, id_collaboratore, fase, mansione,
+                  evento, id_operatore, created_at)
+               VALUES ($1,$2,$3,'rifinitura','Rifinitura','completato',$4,$5)`,
+              [rifinitura.rows[0]!.id, idLavoro, secondo, operatoreCreazione, tsOffset(giornoInProva, 16, 0)],
+            );
+          }
         }
 
         const idMaterialeMap: Record<string, number> = {
           A1: 1, A2: 2, A3: 3, BL2: 4, B1: 5,
         };
         const idMat = idMaterialeMap[l.colore] ?? 2;
-        const quandoUso = giornoInCorso + 1;
+        const quandoUso = l.stato === 'finito'
+          ? giornoInCorso + 1
+          : Math.min(giornoInCorso + 1, -1);
 
         const matResult = await c.query<{ id: number }>(
           `INSERT INTO lavori_materiali

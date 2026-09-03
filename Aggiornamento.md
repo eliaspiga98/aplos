@@ -101,11 +101,22 @@ Apri Aplo's e controlla:
 
 - l'accesso con il proprio operatore;
 - la presenza dei lavori precedenti;
+- nella sezione **Lavori**, le sei fasi **Attesa**, **In corso CAD**,
+  **Attesa rifinitura**, **In corso rifinitura**, **In prova** e **Finito**;
+- la possibilità di mantenere più collaboratori sullo stesso lavoro, segnare
+  ciascun incarico come completato o riattivarlo e aprire lo storico con
+  **Visualizza storico**;
+- la conferma prima del passaggio a **Finito** e la vista **Archivio**, con
+  archiviazione manuale, automatica e ripristino;
 - la presenza di dottori, materiali e allegati;
 - nella sezione **Materiali**, la presenza delle colonne separate per misura,
   quantità nuova e quantità parziale, oltre ai comandi **Modifica** e
   **Elimina**;
-- le nuove sezioni **Collaboratori** e **Macchinari**;
+- nella sezione **Collaboratori**, il riepilogo mensile dei lavori CAD,
+  rifinitura e delle coppie di collaboratori;
+- nella sezione **Depositi**, che la quantità disponibile corrisponda alla
+  somma dei pezzi e non al semplice numero di righe registrate;
+- le sezioni **Collaboratori** e **Macchinari**;
 - la nuova sezione **Documenti**, con creazione delle categorie, caricamento
   PDF e consultazione tramite intelligenza artificiale;
 - l'apertura della pagina **Impostazioni**;

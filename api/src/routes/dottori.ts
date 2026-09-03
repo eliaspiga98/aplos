@@ -142,7 +142,12 @@ export async function dottoriRoutes(app: FastifyInstance) {
     ]);
 
     const counts: Record<string, number> = {
-      in_attesa: 0, in_corso: 0, in_prova: 0, finito: 0,
+      in_attesa: 0,
+      in_corso_cad: 0,
+      attesa_rifinitura: 0,
+      in_corso_rifinitura: 0,
+      in_prova: 0,
+      finito: 0,
     };
     for (const r of byStato.rows) counts[r.stato as string] = Number(r.n);
 

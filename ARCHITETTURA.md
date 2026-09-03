@@ -168,6 +168,8 @@ dalla root delegano ai workspace.
 | `0010_material_inventory.sql` | Quantità nuove/parziali separate e provenienza di ogni utilizzo materiale. |
 | `0011_document_library.sql` | Categorie documentali, metadati PDF, frammenti di testo e indice full-text per le risposte AI con fonti. |
 | `0012_material_identity.sql` | Sostituisce l'unicità categoria/lotto con l'identità completa categoria, lotto, marca, colore e dimensioni per le scorte attive. |
+| `0013_job_workflow_archive.sql` | Espande `stato_lavoro` alle sei fasi operative, migra `in_corso` a `in_corso_cad`, aggiunge completamento/archiviazione dei lavori e il ritardo configurabile di archiviazione automatica. |
+| `0014_assignment_lifecycle.sql` | Aggiunge fase e stato attivo/completato/rimosso agli incarichi, preserva i partecipanti correnti e introduce lo storico append-only `lavori_assegnazioni_eventi`. |
 
 ### 4.3 Modello — entità principali
 
@@ -177,16 +179,20 @@ dalla root delegano ai workspace.
 - `dottori(id, nome, studio, telefono, email, indirizzo, partita_iva,
   codice_fiscale, note, ...)` — stesso pattern `nome` completo.
 - `lavori(id, id_dottore→dottori, nome_paziente, data_entrata DATE,
-  data_consegna DATE, stato: in_attesa|in_corso|in_prova|finito,
+  data_consegna DATE, stato: in_attesa|in_corso_cad|attesa_rifinitura|
+  in_corso_rifinitura|in_prova|finito, finito_at, archiviato_at,
   scala_colori, tipologia_lavoro, note_istruzioni,
   id_operatore_creazione→operatori, ...)`
   con `CHECK (data_consegna >= data_entrata)`.
 - `collaboratori(...)` — persone che eseguono fisicamente i lavori in
   laboratorio, separate dagli `operatori` che accedono al gestionale.
-- `lavori_assegnazioni(id_lavoro, id_collaboratore, mansione,
-  assegnato_at, rimosso_at, ...)` — storico degli incarichi. Le righe non
-  vengono cancellate: la rimozione chiude l'intervallo valorizzando
-  `rimosso_at`; lo stesso lavoro può avere più collaboratori e mansioni.
+- `lavori_assegnazioni(id_lavoro, id_collaboratore, fase, mansione,
+  stato_incarico, assegnato_at, completato_at, rimosso_at, ...)` — stato
+  corrente degli incarichi. Uno stesso lavoro può mantenere più partecipanti
+  attivi o completati e un incarico completato può essere riattivato.
+- `lavori_assegnazioni_eventi(id_assegnazione, tipo_evento, fase, mansione,
+  stato_incarico, id_operatore, created_at)` — storico append-only, caricato
+  dall'interfaccia soltanto su richiesta.
 - `macchinari(...)`, `manutenzioni_programmate(...)` e
   `manutenzioni_interventi(...)` — inventario attrezzature, scadenze con
   preavviso/ricorrenza e registro append-only degli interventi completati.
@@ -203,8 +209,9 @@ dalla root delegano ai workspace.
   sottotipo, marca, colore, lotto, id_deposito→depositi, altezza_mm,
   larghezza_mm, quantita, unita_misura, stato_utilizzo:
   nuovo|parziale|esaurito, soglia_alert, attributi_extra JSONB, ...)`
-  con `UNIQUE (categoria, lotto)`. Lo schema lascia `attributi_extra`
-  per casi non standard prima di estrarli in colonne.
+  con indice unico parziale sull'identità completa attiva: categoria, lotto,
+  marca, colore, altezza e larghezza. Lo schema lascia `attributi_extra` per
+  casi non standard prima di estrarli in colonne.
 - `lavori_materiali(id_lavoro, id_materiale, quantita_usata,
   unita_misura, note, id_operatore, created_at)` — append-only, **senza
   `deleted_at`** (vincolo MDR: la tracciabilità storica non si
@@ -213,6 +220,7 @@ dalla root delegano ai workspace.
   JSONB, created_at)` — append-only, indici su (id_operatore),
   (entita, id_entita), (created_at DESC).
 - `app_settings(id=1, ai_provider, ai_model, ollama_url, mlx_url,
+  archiviazione_lavori_giorni,
   updated_at, updated_by→operatori)` — singleton.
 
 ### 4.4 DB demo opzionale
@@ -328,11 +336,11 @@ schemi TypeBox. Risposte d'errore JSON `{ error: string }`.
 | `/api/auth` | `routes/auth.ts` | nessuna | login, logout, /me, /me/pin, lista operatori per dropdown |
 | `/api/operatori` | `routes/operatori.ts` | `requireAdmin` | CRUD operatori, toggle `usa_demo` |
 | `/api/dottori` | `routes/dottori.ts` | `requireAuth` | CRUD + stats per dottore + export CSV |
-| `/api/lavori` | `routes/lavori.ts` | `requireAuth` | CRUD lavori, strutture, cambio stato, assegnazioni collaboratori e relativo storico, consumo materiale, stampa/export |
-| `/api/collaboratori` | `routes/collaboratori.ts` | `requireAuth` | CRUD collaboratori, conteggio lavori assegnati, export CSV |
+| `/api/lavori` | `routes/lavori.ts` | `requireAuth` | CRUD lavori, sei fasi, assegnazioni e storico, archivio/ripristino e configurazione auto-archivio, consumo materiale, stampa/export |
+| `/api/collaboratori` | `routes/collaboratori.ts` | `requireAuth` | CRUD collaboratori, statistiche mensili CAD/rifinitura e coppie, export CSV |
 | `/api/macchinari` | `routes/macchinari.ts` | `requireAuth` | CRUD macchinari, pianificazione/completamento manutenzioni e notifiche per operatore |
 | `/api/materiali` | `routes/materiali.ts` | `requireAuth` | CRUD materiali, export CSV |
-| `/api/depositi` | `routes/depositi.ts` | `requireAuth` | CRUD depositi |
+| `/api/depositi` | `routes/depositi.ts` | `requireAuth` | CRUD depositi e conteggi distinti di righe e quantità effettive disponibili |
 | `/api/lavori/:id/allegati` | `routes/allegati.ts` | `requireAuth` | Upload (multipart), lista, delete allegati |
 | `/api/ai` | `routes/ai.ts` | `requireAuth` | `/health`, `/chat` (streaming NDJSON) |
 | `/api/documenti` | `routes/documenti.ts` | `requireAuth` | CRUD categorie/PDF, indicizzazione, download e domanda documentale in streaming NDJSON |
@@ -389,11 +397,12 @@ Rotte client e relativa pagina:
 | Rotta | Pagina | Note |
 |---|---|---|
 | `/` | `Dashboard` | KPI, Kanban breve, calendario settimanale, alert magazzino, AI widget aperto |
-| `/lavori` | `Lavori` | Lista filtri + modal di dettaglio/edit |
+| `/lavori` | `Lavori` | Sei fasi, lista/archivio separati, dettaglio, assegnazioni e storico su richiesta |
 | `/calendario` | `Calendario` | Vista mensile lavori per data_consegna |
 | `/dottori` | `Dottori` | Anagrafica + statistiche commesse |
 | `/materiali` | `Materiali` | Magazzino + stato_utilizzo + soglia alert |
 | `/depositi` | `Depositi` | Anagrafica depositi |
+| `/collaboratori` | `Collaboratori` | Anagrafica e statistiche mensili per fase/coppia |
 | `/operatori` | `Operatori` | Admin only — CRUD + toggle demo |
 | `/impostazioni` | `Impostazioni` | Admin only — provider AI |
 | `/lavori/:id/stampa` | `LavoroStampa` | Layout A4, no sidebar |

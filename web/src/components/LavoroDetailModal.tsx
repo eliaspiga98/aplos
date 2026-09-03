@@ -7,10 +7,13 @@ import { LavoroFormModal } from './LavoroFormModal';
 import { AssegnazioniModal } from './AssegnazioniModal';
 import { useConfirm } from './ConfirmDialog';
 import { useToast } from './Toaster';
-import { api, ApiError, type LavoroDettaglio, type TimelineEvent } from '../api';
+import {
+  api, ApiError,
+  type EventoAssegnazione, type LavoroDettaglio, type TimelineEvent,
+} from '../api';
 import {
   formatDate, formatDateTime,
-  labelStatoLavoro, labelTipoStruttura, labelCategoria,
+  FASE_ASSEGNAZIONE_LABEL, labelStatoLavoro, labelTipoStruttura, labelCategoria,
 } from '../utils/format';
 
 interface Props {
@@ -27,7 +30,7 @@ function labelAzione(ev: TimelineEvent): string {
     case 'UPDATE_LAVORO':
       return `Modifica campi: ${(d['campi'] as string[] | undefined)?.join(', ') ?? '—'}`;
     case 'CAMBIO_STATO_LAVORO':
-      return `Stato: ${(d['da'] as string) ?? '?'} → ${(d['a'] as string) ?? '?'}`;
+      return `Fase: ${labelStatoLavoro(d['da'] as string)} → ${labelStatoLavoro(d['a'] as string)}`;
     case 'UPDATE_STRUTTURE_LAVORO':
       return `Strutture aggiornate (${(d['n_strutture'] as number) ?? 0})`;
     case 'REGISTRA_MATERIALE':
@@ -41,7 +44,13 @@ function labelAzione(ev: TimelineEvent): string {
     case 'ASSEGNA_COLLABORATORE':
       return `Collaboratore assegnato — ${(d['mansione'] as string) ?? ''}`;
     case 'UPDATE_ASSEGNAZIONI_LAVORO':
-      return `Assegnazioni aggiornate (${(d['attive'] as number) ?? 0} attive)`;
+      return `Collaboratori aggiornati (${(d['correnti'] as number) ?? (d['attive'] as number) ?? 0} associati)`;
+    case 'ARCHIVIA_LAVORO':
+      return 'Lavoro archiviato manualmente';
+    case 'ARCHIVIA_LAVORO_AUTOMATICO':
+      return 'Lavoro archiviato automaticamente';
+    case 'RIPRISTINA_LAVORO':
+      return 'Lavoro ripristinato dall’archivio';
     default:
       return ev.azione.replaceAll('_', ' ').toLowerCase();
   }
@@ -55,6 +64,8 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
   const [showEdit, setShowEdit] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showAssignments, setShowAssignments] = useState(false);
+  const [showAssignmentHistory, setShowAssignmentHistory] = useState(false);
+  const [assignmentHistory, setAssignmentHistory] = useState<EventoAssegnazione[]>([]);
   const confirm = useConfirm();
   const { push } = useToast();
   const navigate = useNavigate();
@@ -81,6 +92,49 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
     }
   }
 
+  async function handleArchive() {
+    if (!data) return;
+    const ok = await confirm({
+      title: `Archiviare il lavoro #${data.id}?`,
+      message: 'Il lavoro sparirà dalla lista corrente ma resterà recuperabile dalla sezione Archivio.',
+      confirmText: 'Archivia',
+    });
+    if (!ok) return;
+    try {
+      await api.post(`/api/lavori/${data.id}/archivia`, {});
+      push(`Lavoro #${data.id} archiviato`, 'success');
+      await fetchData();
+      onChanged();
+    } catch (err) {
+      push(err instanceof ApiError ? err.message : 'Errore', 'error');
+    }
+  }
+
+  async function handleRestore() {
+    if (!data) return;
+    try {
+      await api.post(`/api/lavori/${data.id}/ripristina`, {});
+      push(`Lavoro #${data.id} ripristinato`, 'success');
+      onChanged();
+      onClose();
+    } catch (err) {
+      push(err instanceof ApiError ? err.message : 'Errore', 'error');
+    }
+  }
+
+  async function toggleAssignmentHistory() {
+    if (!data) return;
+    if (!showAssignmentHistory && assignmentHistory.length === 0) {
+      try {
+        setAssignmentHistory(await api.get<EventoAssegnazione[]>(`/api/lavori/${data.id}/assegnazioni-storico`));
+      } catch (err) {
+        push(err instanceof ApiError ? err.message : 'Impossibile caricare lo storico', 'error');
+        return;
+      }
+    }
+    setShowAssignmentHistory((value) => !value);
+  }
+
   const fetchData = useCallback(async () => {
     if (idLavoro == null) return;
     setLoading(true);
@@ -100,6 +154,8 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
     if (idLavoro != null) {
       void fetchData();
       setShowRegistra(false);
+      setShowAssignmentHistory(false);
+      setAssignmentHistory([]);
     } else {
       setData(null);
     }
@@ -126,7 +182,14 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
               >
                 Stampa
               </button>
-              <button type="button" onClick={() => setShowEdit(true)}>Modifica</button>
+              {data.archiviato_at ? (
+                <button type="button" onClick={() => void handleRestore()}>Ripristina</button>
+              ) : <>
+                {data.stato === 'finito' && (
+                  <button type="button" className="btn-secondary" onClick={() => void handleArchive()}>Archivia</button>
+                )}
+                <button type="button" onClick={() => setShowEdit(true)}>Modifica</button>
+              </>}
             </>
           )}
         </>
@@ -135,6 +198,10 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
       {loading && <p>Caricamento…</p>}
       {data && (
         <div className="detail">
+          {data.archiviato_at && <div className="archive-banner">
+            <strong>Lavoro archiviato</strong>
+            <span>Archiviato il {formatDateTime(data.archiviato_at)}. Ripristinalo per modificarlo.</span>
+          </div>}
           <section>
             <h3>Anagrafica</h3>
             <dl className="kv">
@@ -166,19 +233,44 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
 
           <section>
             <header className="section-header">
-              <h3>Collaboratori ({data.assegnazioni.filter((a) => !a.rimosso_at).length})</h3>
-              <button type="button" onClick={() => setShowAssignments(true)}>Gestisci</button>
+              <h3>Collaboratori ({data.assegnazioni.length})</h3>
+              <div className="section-actions">
+                <button type="button" className="btn-link" onClick={() => void toggleAssignmentHistory()}>
+                  {showAssignmentHistory ? 'Nascondi storico' : 'Visualizza storico'}
+                </button>
+                {!data.archiviato_at && <button type="button" onClick={() => setShowAssignments(true)}>Gestisci</button>}
+              </div>
             </header>
             {data.assegnazioni.length === 0 ? <p className="muted">Nessun collaboratore assegnato.</p> : (
               <table className="table table--compact">
-                <thead><tr><th>Collaboratore</th><th>Mansione</th><th>Assegnato il</th><th>Stato</th></tr></thead>
-                <tbody>{data.assegnazioni.map((a) => <tr key={a.id} className={a.rimosso_at ? 'assignment-history-row' : ''}>
+                <thead><tr><th>Collaboratore</th><th>Fase</th><th>Mansione</th><th>Assegnato il</th><th>Stato</th></tr></thead>
+                <tbody>{data.assegnazioni.map((a) => <tr key={a.id}>
                   <td><strong>{a.collaboratore_nome}</strong></td>
+                  <td>{FASE_ASSEGNAZIONE_LABEL[a.fase]}</td>
                   <td>{a.mansione}</td>
                   <td>{formatDateTime(a.assegnato_at)}</td>
-                  <td>{a.rimosso_at ? `Rimosso il ${formatDateTime(a.rimosso_at)}` : <span className="stato-pill stato-pill--in_corso">Attivo</span>}</td>
+                  <td><span className={`assignment-status assignment-status--${a.stato_incarico}`}>
+                    {a.stato_incarico === 'attivo' ? 'Attivo' : 'Completato'}
+                  </span></td>
                 </tr>)}</tbody>
               </table>
+            )}
+            {showAssignmentHistory && (
+              <div className="assignment-history-panel">
+                <h4>Storico collaboratori</h4>
+                {assignmentHistory.length === 0 ? <p className="muted">Nessun evento registrato.</p> : (
+                  <ul className="assignment-history-list">
+                    {assignmentHistory.map((event) => <li key={event.id}>
+                      <span className={`assignment-event assignment-event--${event.evento}`}>{event.evento}</span>
+                      <strong>{event.collaboratore_nome}</strong>
+                      <span>{FASE_ASSEGNAZIONE_LABEL[event.fase]} · {event.mansione}</span>
+                      <small className="muted">
+                        {formatDateTime(event.created_at)}{event.operatore_nome ? ` · ${event.operatore_nome}` : ''}
+                      </small>
+                    </li>)}
+                  </ul>
+                )}
+              </div>
             )}
           </section>
 
@@ -203,7 +295,7 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
           <section>
             <header className="section-header">
               <h3>Materiali utilizzati ({data.materiali.length})</h3>
-              {!showRegistra && (
+              {!showRegistra && !data.archiviato_at && (
                 <button type="button" onClick={() => setShowRegistra(true)}>
                   Aggiungi materiale
                 </button>
@@ -273,6 +365,7 @@ export function LavoroDetailModal({ idLavoro, onClose, onChanged }: Props) {
             <AllegatiSection
               idLavoro={data.id}
               allegati={data.allegati}
+              readOnly={data.archiviato_at != null}
               onChanged={() => {
                 void fetchData();
                 onChanged();

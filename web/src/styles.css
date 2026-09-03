@@ -599,7 +599,9 @@ input:focus, select:focus, textarea:focus {
   cursor: pointer;
 }
 .stato-select--in_attesa { background: #fff3cd; border-color: #d9b94d; color: #6e5500; }
-.stato-select--in_corso  { background: #cfe0f0; border-color: var(--navy-light); color: var(--navy); }
+.stato-select--in_corso_cad { background: #cfe0f0; border-color: var(--navy-light); color: var(--navy); }
+.stato-select--attesa_rifinitura { background: #f8e1c4; border-color: #c88942; color: #74420d; }
+.stato-select--in_corso_rifinitura { background: #cee8e4; border-color: #4b968b; color: #195d55; }
 .stato-select--in_prova  { background: #e7d6ec; border-color: #9a6dad; color: #59266b; }
 .stato-select--finito    { background: #d4ead8; border-color: #5fa873; color: #1a5d2e; }
 .stato-select--nuovo     { background: #d4ead8; border-color: #5fa873; color: #1a5d2e; }
@@ -1140,7 +1142,9 @@ body.is-resize-br { cursor: nwse-resize; }
 }
 .queue-item:hover { background: var(--sand-soft); transform: translateX(2px); }
 .queue-item--in_attesa { border-left-color: #d9b94d; }
-.queue-item--in_corso  { border-left-color: var(--navy-light); }
+.queue-item--in_corso_cad { border-left-color: var(--navy-light); }
+.queue-item--attesa_rifinitura { border-left-color: #c88942; }
+.queue-item--in_corso_rifinitura { border-left-color: #4b968b; }
 .queue-item--in_prova  { border-left-color: #9a6dad; }
 .queue-item-paziente {
   font-weight: 600;
@@ -1176,7 +1180,9 @@ body.is-resize-br { cursor: nwse-resize; }
   letter-spacing: 0.05em;
 }
 .stato-pill--in_attesa { background: #fff3cd; color: #7a5d00; }
-.stato-pill--in_corso  { background: #cfe0f0; color: var(--navy); }
+.stato-pill--in_corso_cad { background: #cfe0f0; color: var(--navy); }
+.stato-pill--attesa_rifinitura { background: #f8e1c4; color: #74420d; }
+.stato-pill--in_corso_rifinitura { background: #cee8e4; color: #195d55; }
 .stato-pill--in_prova  { background: #e7d6ec; color: #59266b; }
 .stato-pill--finito    { background: #d4ead8; color: #1a5d2e; }
 .stato-pill--esaurito  { background: #f3d4cf; color: #8a2d24; }
@@ -1262,7 +1268,9 @@ body.is-resize-br { cursor: nwse-resize; }
   transition: width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .bar-fill--in_attesa { background: linear-gradient(90deg, #f4d35e, #d9b94d); }
-.bar-fill--in_corso  { background: linear-gradient(90deg, var(--navy-light), var(--navy)); }
+.bar-fill--in_corso_cad { background: linear-gradient(90deg, var(--navy-light), var(--navy)); }
+.bar-fill--attesa_rifinitura { background: linear-gradient(90deg, #e6b879, #c88942); }
+.bar-fill--in_corso_rifinitura { background: linear-gradient(90deg, #73b9ae, #357f75); }
 .bar-fill--in_prova  { background: linear-gradient(90deg, #b07ec5, #9a6dad); }
 .bar-fill--finito    { background: linear-gradient(90deg, #75c08b, #5fa873); }
 
@@ -1594,11 +1602,15 @@ body.is-resize-br { cursor: nwse-resize; }
   flex-shrink: 0;
 }
 .calendar-event--in_attesa .calendar-event-dot { background: #d9b94d; }
-.calendar-event--in_corso  .calendar-event-dot { background: var(--navy-light); }
+.calendar-event--in_corso_cad .calendar-event-dot { background: var(--navy-light); }
+.calendar-event--attesa_rifinitura .calendar-event-dot { background: #c88942; }
+.calendar-event--in_corso_rifinitura .calendar-event-dot { background: #4b968b; }
 .calendar-event--in_prova  .calendar-event-dot { background: #9a6dad; }
 .calendar-event--finito    .calendar-event-dot { background: #5fa873; }
 .calendar-event--in_attesa { border-left: 3px solid #d9b94d; padding-left: 5px; }
-.calendar-event--in_corso  { border-left: 3px solid var(--navy-light); padding-left: 5px; }
+.calendar-event--in_corso_cad { border-left: 3px solid var(--navy-light); padding-left: 5px; }
+.calendar-event--attesa_rifinitura { border-left: 3px solid #c88942; padding-left: 5px; }
+.calendar-event--in_corso_rifinitura { border-left: 3px solid #4b968b; padding-left: 5px; }
 .calendar-event--in_prova  { border-left: 3px solid #9a6dad; padding-left: 5px; }
 .calendar-event--finito    { border-left: 3px solid #5fa873; padding-left: 5px; opacity: 0.7; }
 .calendar-event-more {
@@ -1622,7 +1634,9 @@ body.is-resize-br { cursor: nwse-resize; }
   display: inline-block;
 }
 .calendar-legend-dot--in_attesa { background: #d9b94d; }
-.calendar-legend-dot--in_corso  { background: var(--navy-light); }
+.calendar-legend-dot--in_corso_cad { background: var(--navy-light); }
+.calendar-legend-dot--attesa_rifinitura { background: #c88942; }
+.calendar-legend-dot--in_corso_rifinitura { background: #4b968b; }
 .calendar-legend-dot--in_prova  { background: #9a6dad; }
 .calendar-legend-dot--finito    { background: #5fa873; }
 
@@ -1661,12 +1675,11 @@ body.is-resize-br { cursor: nwse-resize; }
 /* ---------- Kanban ---------- */
 .kanban {
   display: grid;
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  grid-template-columns: repeat(6, minmax(230px, 1fr));
   gap: 0.85rem;
   align-items: flex-start;
-}
-@media (max-width: 1100px) {
-  .kanban { grid-template-columns: repeat(2, 1fr); }
+  overflow-x: auto;
+  padding-bottom: 0.55rem;
 }
 .kanban-col {
   background: var(--cream);
@@ -1697,7 +1710,9 @@ body.is-resize-br { cursor: nwse-resize; }
   color: white;
 }
 .kanban-col-header--in_attesa { background: #d9b94d; }
-.kanban-col-header--in_corso  { background: var(--navy-light); }
+.kanban-col-header--in_corso_cad { background: var(--navy-light); }
+.kanban-col-header--attesa_rifinitura { background: #c88942; }
+.kanban-col-header--in_corso_rifinitura { background: #357f75; }
 .kanban-col-header--in_prova  { background: #9a6dad; }
 .kanban-col-header--finito    { background: #5fa873; }
 .kanban-col-count {
@@ -2561,10 +2576,54 @@ body.is-resizing-ai * { pointer-events: none; }
 /* ---------- Collaboratori e assegnazioni ---------- */
 .form-field { display: flex; flex-direction: column; gap: 0.35rem; }
 .field-label-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
-.assignment-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(160px, 1fr) auto; gap: 0.55rem; align-items: center; }
-.assignment-chip { display: inline-flex; padding: 0.18rem 0.45rem; border-radius: 999px; background: var(--sand-soft); color: var(--navy); font-size: 0.72rem; font-weight: 600; }
+.assignment-chip { display: inline-flex; padding: 0.18rem 0.45rem; margin: 0.1rem; border-radius: 999px; background: var(--sand-soft); color: var(--navy); font-size: 0.72rem; font-weight: 600; }
+.assignment-chip--completato { background: #e6e8e9; color: var(--text-muted); }
 .kanban-assignees { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.55rem; }
-.assignment-history-row { opacity: 0.62; }
+.assignment-transition-note { display: grid; gap: 0.2rem; padding: 0.75rem 0.9rem; border-left: 4px solid var(--navy-light); background: #eef5f9; color: var(--navy); border-radius: var(--radius); }
+.assignment-transition-note span { color: var(--text-muted); font-size: 0.88rem; }
+.assignment-editor-list { display: grid; gap: 0.65rem; }
+.assignment-editor-row { display: grid; grid-template-columns: minmax(180px, 1.1fr) minmax(130px, 0.7fr) minmax(180px, 1fr); gap: 0.6rem; padding: 0.75rem; border: 1px solid var(--border); border-left: 4px solid #4b968b; border-radius: var(--radius); background: white; }
+.assignment-editor-row--completato { border-left-color: #9aa4a8; background: #f7f7f5; }
+.assignment-editor-row label { display: grid; gap: 0.3rem; align-content: start; font-size: 0.74rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.assignment-editor-row label select,
+.assignment-editor-row label input { font-size: 0.9rem; font-weight: 400; text-transform: none; letter-spacing: normal; }
+.assignment-editor-actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.55rem; }
+.assignment-status { display: inline-flex; align-items: center; border-radius: 999px; padding: 0.16rem 0.55rem; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.assignment-status--attivo { background: #d7eee9; color: #195d55; }
+.assignment-status--completato { background: #e6e8e9; color: #566267; }
+.assignment-add { justify-self: start; }
+.assignment-history-panel { margin-top: 0.75rem; padding: 0.8rem; background: var(--cream); border: 1px solid var(--border); border-radius: var(--radius); }
+.assignment-history-panel h4 { margin: 0 0 0.6rem; }
+.assignment-history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+.assignment-history-list li { display: grid; grid-template-columns: auto minmax(120px, 0.8fr) minmax(140px, 1fr) minmax(170px, 1fr); align-items: center; gap: 0.55rem; padding: 0.5rem 0.6rem; background: white; border-radius: var(--radius); }
+.section-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.55rem; flex-wrap: wrap; }
+.assignment-event { border-radius: 999px; padding: 0.12rem 0.45rem; background: #e6e8e9; color: var(--text-muted); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; }
+.assignment-event--assegnato, .assignment-event--riattivato { background: #d7eee9; color: #195d55; }
+.assignment-event--completato { background: #d4ead8; color: #1a5d2e; }
+.assignment-event--rimosso { background: #f3d4cf; color: #8a2d24; }
+
+.workflow-scope-switch { display: inline-flex; gap: 3px; padding: 3px; margin-bottom: 0.8rem; border: 1px solid var(--border); border-radius: 999px; background: white; }
+.workflow-scope-switch button { padding: 0.4rem 0.9rem; border-radius: 999px; background: transparent; color: var(--text-muted); box-shadow: none; }
+.workflow-scope-switch button.active { background: var(--navy); color: white; }
+.archive-settings { display: flex; align-items: end; gap: 0.8rem; margin-bottom: 0.8rem; padding: 0.75rem 0.9rem; border: 1px solid var(--border); border-left: 4px solid var(--sand); border-radius: var(--radius); background: var(--cream); }
+.archive-settings > div { display: grid; gap: 0.15rem; flex: 1; }
+.archive-settings > div span { color: var(--text-muted); font-size: 0.82rem; }
+.archive-settings label { display: grid; gap: 0.25rem; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+.archive-settings input { width: 90px; }
+.archive-banner { display: grid; gap: 0.15rem; margin-bottom: 1rem; padding: 0.75rem 0.9rem; border-left: 4px solid var(--navy); background: #e8eef2; border-radius: var(--radius); }
+.archive-banner span { color: var(--text-muted); font-size: 0.84rem; }
+.deposit-record-count { display: block; margin-top: 0.1rem; color: var(--text-muted); font-size: 0.72rem; }
+
+.collaborator-report { margin: 0.9rem 0 1.2rem; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--cream); }
+.collaborator-report-header { display: flex; justify-content: space-between; align-items: end; gap: 1rem; margin-bottom: 0.8rem; }
+.collaborator-report-header h2 { margin: 0; font-size: 1.05rem; }
+.collaborator-report-header p { margin: 0.2rem 0 0; }
+.collaborator-report-header label { display: grid; gap: 0.25rem; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+.collaborator-report-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 0.35fr); gap: 0.9rem; align-items: start; }
+.collaboration-pairs { padding: 0.8rem; border-radius: var(--radius); background: white; }
+.collaboration-pairs h3 { margin: 0 0 0.6rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.collaboration-pairs ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.collaboration-pairs li { display: flex; justify-content: space-between; gap: 0.5rem; padding-bottom: 0.35rem; border-bottom: 1px solid var(--border); }
 
 /* ---------- Selettore scala VITA ---------- */
 .vita-picker { position: relative; }
@@ -2595,7 +2654,10 @@ body.is-resizing-ai * { pointer-events: none; }
 .text-danger { color: var(--danger); font-weight: 700; }
 
 @media (max-width: 760px) {
-  .assignment-row { grid-template-columns: 1fr; }
+  .assignment-editor-row, .assignment-history-list li { grid-template-columns: 1fr; }
+  .assignment-editor-actions { grid-column: 1; justify-content: flex-start; flex-wrap: wrap; }
+  .archive-settings, .collaborator-report-header { align-items: stretch; flex-direction: column; }
+  .collaborator-report-grid { grid-template-columns: 1fr; }
   .maintenance-card { align-items: flex-start; flex-direction: column; }
   .maintenance-actions { justify-content: flex-start; }
   .vita-group { grid-template-columns: 1fr; }

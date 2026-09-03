@@ -71,7 +71,8 @@ esplicito > meta-programmazione.
 - PIN salvato come hash bcrypt.
 
 ### 5.2 Dashboard
-- KPI: lavori per stato (`in_attesa`, `in_corso`, `in_prova`, `finito`),
+- KPI: lavori per stato (`in_attesa`, `in_corso_cad`, `attesa_rifinitura`,
+  `in_corso_rifinitura`, `in_prova`, `finito`),
   alert materiali sotto soglia, conteggio lavori in scadenza nei prossimi N
   giorni.
 - Tabella "Ultimi N lavori" con accesso rapido alla modifica.
@@ -88,10 +89,19 @@ esplicito > meta-programmazione.
   - **Odontogramma:** selezione denti (notazione FDI 11-48 e 51-85),
     raggruppamento in ponti.
 - Cambio stato come azione separata (registrata in `audit_log`).
-- Quando un lavoro passa in corso, proposta non obbligatoria di assegnare uno
-  o più collaboratori con una mansione (per esempio CAD o rifinitura).
-  Le assegnazioni restano attive attraversando gli altri stati e possono
-  essere modificate in seguito; data di assegnazione e storico sono preservati.
+- Il flusso è liberamente spostabile tra Attesa, In corso CAD, Attesa
+  rifinitura, In corso rifinitura, In prova e Finito. Prima di confermare
+  Finito viene mostrata una richiesta esplicita di conferma.
+- Quando un lavoro passa in corso CAD o in corso rifinitura, il sistema propone
+  senza obbligo di assegnare uno o più collaboratori alla relativa fase.
+  Ogni incarico può essere segnato come attivo o completato e poi riattivato;
+  i partecipanti correnti restano visibili insieme senza perdere chi ha già
+  concluso la propria parte.
+- Lo storico dettagliato di assegnazioni, completamenti, riattivazioni,
+  modifiche e rimozioni viene caricato solo tramite **Visualizza storico**.
+- I lavori finiti possono essere archiviati manualmente o automaticamente dopo
+  un numero configurabile di giorni (15 per impostazione predefinita). La vista
+  Archivio è separata e consente sempre il ripristino.
 - La scala colori è una scelta guidata VITA: BL1-BL3, A1-A4 (A3.5 incluso),
   B1-B4, C1-C4 e D2-D4. D1 non è ammesso.
 - Il dottore può essere creato direttamente dal form del lavoro e viene
@@ -103,6 +113,9 @@ esplicito > meta-programmazione.
 - Anagrafica separata dagli operatori autenticati, con contatti, mansioni e note.
 - Un collaboratore può essere associato a più lavori e lo stesso lavoro può
   avere più incarichi contemporanei.
+- Il riepilogo mensile conta i lavori conclusi in fase CAD, rifinitura e altre
+  fasi per ogni collaboratore, oltre alle coppie che hanno partecipato agli
+  stessi lavori.
 - Archiviare un collaboratore chiude le assegnazioni attive ma non cancella
   lo storico.
 
@@ -114,6 +127,9 @@ esplicito > meta-programmazione.
 - La stessa categoria e lo stesso lotto possono comparire su righe differenti
   quando cambia marca, colore, altezza o larghezza. Soltanto i materiali con
   tutti questi dati uguali condividono la stessa quantità di magazzino.
+- Nella pagina Depositi il conteggio principale somma le quantità nuove e
+  parziali disponibili; il numero delle righe di materiale resta indicato
+  separatamente.
 - Alert quando sotto `soglia_alert`.
 - Filtri per lotto, marca, deposito.
 
@@ -151,19 +167,22 @@ Entità:
 
 - `operatori` — utenti del sistema (PIN hashato, ruolo `admin`/`tecnico`).
 - `dottori` — anagrafica clienti.
-- `lavori` — commesse / dispositivi medici.
+- `lavori` — commesse / dispositivi medici, con data di completamento e
+  archiviazione reversibile.
 - `lavori_strutture` — odontogramma. `tipo_struttura` ∈ {`corona_singola`,
   `ponte`} + `elementi_dentali SMALLINT[]`. Vincoli CHECK garantiscono
   coerenza (no ponti da 1 dente, no corone con più denti).
 - `lavori_allegati` — file (STL, foto) associati a un lavoro.
 - `collaboratori` — persone che eseguono fisicamente le lavorazioni.
-- `lavori_assegnazioni` — mansione, presa in carico e chiusura incarico,
-  mantenute come storico.
+- `lavori_assegnazioni` — fase, mansione, stato attivo/completato/rimosso e
+  relative date per ogni partecipante corrente.
+- `lavori_assegnazioni_eventi` — storico append-only degli eventi di incarico.
 - `macchinari` — anagrafica delle attrezzature.
 - `manutenzioni_programmate` — prossima scadenza, preavviso e ricorrenza.
 - `manutenzioni_interventi` — registro degli interventi effettuati.
 - `manutenzioni_notifiche_lette` — letture avvisi per operatore/occorrenza.
-- `materiali` — magazzino. `(categoria, lotto)` UNIQUE.
+- `materiali` — magazzino. L'identità attiva comprende categoria, lotto,
+  marca, colore e dimensioni; quantità nuove e parziali sono separate.
 - `lavori_materiali` — **tracciabilità MDR**. Mai cancellare.
 - `categorie_documenti` — classificazione libera dei protocolli e manuali.
 - `documenti` — metadati e percorso persistente dei PDF caricati.
@@ -259,6 +278,9 @@ Da affrontare prima del rispettivo modulo:
       orario e isolamento completo delle query di dettaglio nel database demo.
 - [x] **Fase 16** — Libreria Documenti con categorie libere, indicizzazione PDF
       locale e risposte AI basate sui protocolli con fonti per pagina.
+- [x] **Fase 17** — Workflow lavori in sei fasi, partecipanti multipli con
+      stato e storico, conferma completamento, archivio manuale/automatico,
+      statistiche mensili collaboratori e quantità reali nei depositi.
 
 ## 10. Deploy in laboratorio
 

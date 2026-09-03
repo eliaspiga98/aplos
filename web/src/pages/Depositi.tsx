@@ -85,7 +85,7 @@ export function DepositiPage() {
               <tr>
                 <th>Nome</th>
                 <th>Descrizione</th>
-                <th>Materiali</th>
+                <th>Quantità disponibile</th>
                 <th></th>
               </tr>
             </thead>
@@ -94,7 +94,10 @@ export function DepositiPage() {
                 <tr key={d.id}>
                   <td><strong>{d.nome}</strong></td>
                   <td>{d.descrizione ?? <span className="muted">—</span>}</td>
-                  <td>{d.n_materiali ?? 0}</td>
+                  <td>
+                    <strong>{d.quantita_materiali ?? 0}</strong>
+                    <span className="deposit-record-count">{d.n_materiali ?? 0} schede materiale</span>
+                  </td>
                   <td style={{ textAlign: 'right' }}>
                     <button type="button" className="btn-link" onClick={() => setEditing(d)}>
                       Modifica

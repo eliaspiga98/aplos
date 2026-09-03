@@ -30,12 +30,16 @@ export async function depositiRoutes(app: FastifyInstance) {
     }
     params.push(limit, offset);
 
-    // Per ogni deposito calcoliamo anche il numero di materiali attivi (utile
-    // sia in UI che per evitare di cancellare un deposito ancora popolato).
+    // `n_materiali` conta le righe anagrafiche; `quantita_materiali` conta le
+    // unita realmente disponibili, comprese quelle gia aperte/parziali.
     const result = await req.pool.query<Record<string, unknown> & { _total: string }>(
       `SELECT d.id, d.nome, d.descrizione, d.created_at, d.updated_at,
               COALESCE((SELECT COUNT(*) FROM materiali m
                         WHERE m.id_deposito = d.id AND m.deleted_at IS NULL), 0)::int AS n_materiali,
+              COALESCE((SELECT SUM(COALESCE(m.quantita, 0) + COALESCE(m.quantita_parziale, 0))
+                        FROM materiali m
+                        WHERE m.id_deposito = d.id AND m.deleted_at IS NULL), 0)::double precision
+                AS quantita_materiali,
               COUNT(*) OVER () AS _total
        FROM depositi d
        WHERE ${where.join(' AND ')}

@@ -111,11 +111,24 @@ L'interfaccia di inserimento è una modale che raggruppa le specifiche tecniche 
   sono distinti dagli operatori autorizzati ad accedere al programma.
 * Un lavoro può avere più collaboratori contemporaneamente, anche con mansioni
   differenti (per esempio CAD e rifinitura).
-* Nel passaggio a `in_corso` il sistema propone l'assegnazione, senza renderla
-  obbligatoria. Le assegnazioni possono essere aggiunte o modificate in seguito
-  e non vengono rimosse automaticamente da un cambio di stato.
-* Per ogni incarico devono restare disponibili collaboratore, mansione, data di
-  assegnazione e data di eventuale rimozione.
+* Le fasi sono: Attesa, In corso CAD, Attesa rifinitura, In corso rifinitura,
+  In prova e Finito. L'operatore conserva la libertà di spostare il lavoro
+  nella fase necessaria.
+* Nel passaggio a In corso CAD o In corso rifinitura il sistema propone
+  l'assegnazione, senza renderla obbligatoria. Le assegnazioni possono essere
+  aggiunte o modificate in seguito.
+* Per ogni incarico devono restare disponibili collaboratore, fase, mansione,
+  data di assegnazione, stato attivo/completato/rimosso e relative date. Un
+  incarico completato può tornare attivo se il lavoro torna a una fase
+  precedente.
+* I partecipanti correnti, compresi quelli che hanno completato la propria
+  fase, restano visibili insieme. Lo storico degli eventi viene mostrato solo
+  tramite un comando dedicato, così non occupa spazio nella scheda.
+* Il passaggio a Finito richiede conferma. I lavori finiti possono essere
+  archiviati manualmente o automaticamente dopo un numero configurabile di
+  giorni, e devono poter essere ripristinati da una vista Archivio separata.
+* Un riepilogo mensile deve contare i lavori completati da ogni collaboratore
+  in CAD e rifinitura e le coppie che hanno partecipato allo stesso lavoro.
 
 ### 5.4 Inserimento rapido del dottore
 
@@ -207,7 +220,10 @@ Per supportare le funzionalità sopra descritte, il database relazionale (es. Po
 * `nome_paziente` (String)
 * `data_entrata` (Date)
 * `data_consegna` (Date)
-* `stato` (Enum: In Attesa, In Corso, In Prova, Finito)
+* `stato` (Enum: In Attesa, In Corso CAD, Attesa Rifinitura,
+  In Corso Rifinitura, In Prova, Finito)
+* `finito_at` (Timestamp nullable)
+* `archiviato_at` (Timestamp nullable, ripristinabile)
 * `scala_colori` (String)
 * `note_istruzioni` (Text)
 * `id_operatore_creazione` (FK)
@@ -225,12 +241,17 @@ Per supportare le funzionalità sopra descritte, il database relazionale (es. Po
 * `categoria` (Enum: Zirconio, PMMA, ecc.)
 * `sottotipo` (String)
 * `colore` (String)
-* `lotto` (String, Unique)
-* `deposito` (String - dove si trova fisicamente)
+* `lotto` (String; parte dell'identità insieme a categoria, marca, colore e misure)
+* `id_deposito` (FK - dove si trova fisicamente)
 * `altezza_mm` (Int)
 * `larghezza_mm` (Int)
 * `marca` (String)
+* `quantita` (Decimal - pezzi o quantità ancora nuovi)
+* `quantita_parziale` (Decimal - pezzi o quantità già aperti ma riutilizzabili)
 * `stato_utilizzo` (Enum: Nuovo, Parziale, Esaurito)
+
+Nella sezione Depositi il totale principale è la somma di `quantita` e
+`quantita_parziale`; il numero di record materiali è un'informazione distinta.
 
 ### 8.5 Tabella `Audit_Log` (Critica per normative)
 * `id` (PK)

@@ -8,6 +8,7 @@ interface Props {
   idLavoro: number;
   allegati: Allegato[];
   onChanged: () => void;
+  readOnly?: boolean;
 }
 
 function formatBytes(b: string | null): string {
@@ -26,7 +27,7 @@ function fileIcon(name: string): string {
   return '📎';
 }
 
-export function AllegatiSection({ idLavoro, allegati, onChanged }: Props) {
+export function AllegatiSection({ idLavoro, allegati, onChanged, readOnly = false }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +75,7 @@ export function AllegatiSection({ idLavoro, allegati, onChanged }: Props) {
 
   return (
     <div>
-      <div className="upload-row">
+      {!readOnly && <div className="upload-row">
         <input
           ref={inputRef}
           type="file"
@@ -83,7 +84,7 @@ export function AllegatiSection({ idLavoro, allegati, onChanged }: Props) {
           disabled={uploading}
         />
         {uploading && <span className="muted">Upload in corso…</span>}
-      </div>
+      </div>}
       {error && <div className="error">{error}</div>}
       {allegati.length === 0 ? (
         <p className="muted">Nessun allegato.</p>
@@ -109,13 +110,13 @@ export function AllegatiSection({ idLavoro, allegati, onChanged }: Props) {
               >
                 Scarica
               </a>
-              <button
+              {!readOnly && <button
                 type="button"
                 className="btn-link"
                 onClick={() => void handleDelete(a.id, a.nome_file)}
               >
                 Elimina
-              </button>
+              </button>}
             </li>
           ))}
         </ul>

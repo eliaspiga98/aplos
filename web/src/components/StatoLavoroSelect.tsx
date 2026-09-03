@@ -1,10 +1,15 @@
 import { useState } from 'react';
-import { api, type AssegnazioneLavoro, type StatoLavoro } from '../api';
+import { api, ApiError, type AssegnazioneLavoro, type StatoLavoro } from '../api';
 import { STATO_LAVORO_LABEL } from '../utils/format';
 import { AssegnazioniModal } from './AssegnazioniModal';
+import { useConfirm } from './ConfirmDialog';
+import { useToast } from './Toaster';
 
 const STATI: { value: StatoLavoro; label: string }[] = (
-  ['in_attesa', 'in_corso', 'in_prova', 'finito'] as StatoLavoro[]
+  [
+    'in_attesa', 'in_corso_cad', 'attesa_rifinitura',
+    'in_corso_rifinitura', 'in_prova', 'finito',
+  ] as StatoLavoro[]
 ).map((value) => ({ value, label: STATO_LAVORO_LABEL[value]! }));
 
 interface Props {
@@ -17,17 +22,29 @@ interface Props {
 export function StatoLavoroSelect({ idLavoro, stato, assegnazioni = [], onChange }: Props) {
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<StatoLavoro | null>(null);
+  const confirm = useConfirm();
+  const { push } = useToast();
 
   async function handleChange(next: StatoLavoro) {
     if (next === stato) return;
-    if (next === 'in_corso') {
+    if (next === 'in_corso_cad' || next === 'in_corso_rifinitura') {
       setPending(next);
       return;
+    }
+    if (next === 'finito') {
+      const ok = await confirm({
+        title: 'Confermare il completamento?',
+        message: 'Il lavoro verrà spostato in Finito e tutti gli incarichi ancora attivi saranno completati.',
+        confirmText: 'Sì, è finito',
+      });
+      if (!ok) return;
     }
     setBusy(true);
     try {
       await api.post(`/api/lavori/${idLavoro}/stato`, { stato: next });
       onChange(next);
+    } catch (err) {
+      push(err instanceof ApiError ? err.message : 'Errore', 'error');
     } finally {
       setBusy(false);
     }

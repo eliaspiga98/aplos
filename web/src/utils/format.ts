@@ -81,9 +81,17 @@ export function formatDateTime(value: string | Date | null | undefined): string 
 
 export const STATO_LAVORO_LABEL: Record<string, string> = {
   in_attesa: 'In attesa',
-  in_corso: 'In corso',
+  in_corso_cad: 'In corso CAD',
+  attesa_rifinitura: 'Attesa rifinitura',
+  in_corso_rifinitura: 'In corso rifinitura',
   in_prova: 'In prova',
   finito: 'Finito',
+};
+
+export const FASE_ASSEGNAZIONE_LABEL: Record<string, string> = {
+  cad: 'CAD',
+  rifinitura: 'Rifinitura',
+  altro: 'Altro',
 };
 
 export const STATO_UTILIZZO_LABEL: Record<StatoUtilizzo, string> = {

@@ -3,6 +3,7 @@ import { api, ApiError, type Lavoro, type StatoLavoro } from '../api';
 import { useToast } from './Toaster';
 import { daysFromToday, formatDateShort } from '../utils/format';
 import { AssegnazioniModal } from './AssegnazioniModal';
+import { useConfirm } from './ConfirmDialog';
 
 interface Props {
   lavori: Lavoro[];
@@ -13,7 +14,9 @@ interface Props {
 
 const COLUMNS: Array<{ key: StatoLavoro; label: string }> = [
   { key: 'in_attesa', label: 'In attesa' },
-  { key: 'in_corso',  label: 'In corso' },
+  { key: 'in_corso_cad', label: 'In corso CAD' },
+  { key: 'attesa_rifinitura', label: 'Attesa rifinitura' },
+  { key: 'in_corso_rifinitura', label: 'In corso rifinitura' },
   { key: 'in_prova',  label: 'In prova' },
   { key: 'finito',    label: 'Finito' },
 ];
@@ -23,6 +26,7 @@ export function LavoriKanban({ lavori, onChange, onOpen, onRefresh }: Props) {
   const [dragOver, setDragOver] = useState<StatoLavoro | null>(null);
   const [pendingMove, setPendingMove] = useState<{ id: number; stato: StatoLavoro } | null>(null);
   const { push } = useToast();
+  const confirm = useConfirm();
 
   const grouped = COLUMNS.reduce(
     (acc, c) => { acc[c.key] = []; return acc; },
@@ -41,10 +45,21 @@ export function LavoriKanban({ lavori, onChange, onOpen, onRefresh }: Props) {
     if (dragId == null) return;
     const lavoro = lavori.find((l) => l.id === dragId);
     if (!lavoro || lavoro.stato === stato) return;
-    if (stato === 'in_corso') {
+    if (stato === 'in_corso_cad' || stato === 'in_corso_rifinitura') {
       setPendingMove({ id: dragId, stato });
       setDragId(null);
       return;
+    }
+    if (stato === 'finito') {
+      const ok = await confirm({
+        title: 'Confermare il completamento?',
+        message: `Il lavoro #${dragId} verrà spostato in Finito e gli incarichi attivi saranno completati.`,
+        confirmText: 'Sì, è finito',
+      });
+      if (!ok) {
+        setDragId(null);
+        return;
+      }
     }
     // Optimistic update
     const prev = lavori;
@@ -103,8 +118,8 @@ export function LavoriKanban({ lavori, onChange, onOpen, onRefresh }: Props) {
                     {l.dottore_studio ? ` — ${l.dottore_studio}` : ''}
                   </div>
                   {l.assegnazioni.length > 0 && <div className="kanban-assignees">
-                    {l.assegnazioni.map((a) => <span className="assignment-chip" key={a.id} title={a.mansione}>
-                      {a.collaboratore_nome} · {a.mansione}
+                    {l.assegnazioni.map((a) => <span className={`assignment-chip assignment-chip--${a.stato_incarico}`} key={a.id} title={a.mansione}>
+                      {a.collaboratore_nome} · {a.fase === 'cad' ? 'CAD' : a.fase === 'rifinitura' ? 'Rif.' : a.mansione}
                     </span>)}
                   </div>}
                   <footer className="kanban-card-foot muted">

@@ -3,7 +3,12 @@ import type { Lavoro } from '../api';
 import { toDateInputValue } from '../utils/format';
 
 const STATO_LABEL: Record<string, string> = {
-  in_attesa: 'In attesa', in_corso: 'In corso', in_prova: 'In prova', finito: 'Finito',
+  in_attesa: 'In attesa',
+  in_corso_cad: 'In corso CAD',
+  attesa_rifinitura: 'Attesa rifinitura',
+  in_corso_rifinitura: 'In corso rifinitura',
+  in_prova: 'In prova',
+  finito: 'Finito',
 };
 const MONTHS_IT = [
   'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
